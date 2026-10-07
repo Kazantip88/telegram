@@ -10,7 +10,7 @@ from telethon.errors import FloodWaitError
 from .db import fingerprint, save_lead
 from .detector import detect
 from .discussion_filter import inspect_discussion
-from .emailer import build_message
+from .emailer import build_message, send_message
 from .scoring import score_lead
 
 
@@ -79,6 +79,7 @@ async def _save_candidate(settings, source: str, telegram_message_id: int, text:
     print("\n=== QUALIFIED LEAD ===")
     print(msg.as_string())
     print("=== END LEAD ===\n")
+    await send_message(settings, msg)
     return result.priority
 
 

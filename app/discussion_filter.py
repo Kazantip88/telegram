@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from telethon.errors import RPCError
+from telethon.errors import FloodWaitError, RPCError
 
 
 @dataclass(frozen=True)
@@ -17,10 +17,10 @@ class DiscussionResult:
 
 
 async def inspect_discussion(message, *, limit: int = 10, active_days: int = 30) -> DiscussionResult:
-    """Cheaply decide whether a channel post is worth reading for comments.
+    """Read a small recent slice of a linked discussion thread.
 
-    Telegram exposes comment metadata on the post itself. We use that metadata
-    as the first gate, then fetch only a small number of recent replies.
+    A post must expose discussion metadata and recent comments. Only one
+    comment fetch is performed; flood limits are propagated to the caller.
     """
     replies = getattr(message, "replies", None)
     if replies is None:
@@ -32,32 +32,21 @@ async def inspect_discussion(message, *, limit: int = 10, active_days: int = 30)
         return DiscussionResult(False, False, total, 0, (), "no_comments")
 
     try:
-        # Telethon's reply_to support retrieves the thread in the linked
-        # discussion group. We intentionally inspect only recent comments.
-        comments = []
+        comments: list[str] = []
+        newest = None
         async for reply in message.client.iter_messages(
             channel_id,
             reply_to=message.id,
             limit=limit,
         ):
+            if newest is None:
+                newest = getattr(reply, "date", None)
             text = (reply.raw_text or "").strip()
             if text:
                 comments.append(text)
 
         if not comments:
             return DiscussionResult(False, False, total, 0, (), "discussion_unreadable")
-
-        # The iterator is reverse chronological in Telegram/Telethon usage;
-        # use the newest fetched message date as the activity signal.
-        newest = None
-        async for reply in message.client.iter_messages(
-            channel_id,
-            reply_to=message.id,
-            limit=1,
-        ):
-            newest = getattr(reply, "date", None)
-            break
-
         if newest is None:
             return DiscussionResult(False, False, total, len(comments), tuple(comments), "no_comment_date")
 
@@ -73,5 +62,7 @@ async def inspect_discussion(message, *, limit: int = 10, active_days: int = 30)
             tuple(comments),
             "active" if active else "inactive",
         )
+    except FloodWaitError:
+        raise
     except (RPCError, ValueError, TypeError) as exc:
         return DiscussionResult(False, False, total, 0, (), f"discussion_error:{type(exc).__name__}")

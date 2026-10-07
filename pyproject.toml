@@ -1,0 +1,8 @@
+[project]
+name = "telegram-law-lead-monitor"
+version = "0.1.0"
+description = "RU/DE Telegram fraud-recovery lead triage MVP"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

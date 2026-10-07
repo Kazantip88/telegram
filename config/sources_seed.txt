@@ -1,0 +1,30 @@
+# Public Telegram source seed list discovered from web search.
+# Keep only public sources that the account is authorized to monitor.
+# This is a seed list, not a claim that it contains all Telegram sources.
+# Language/category: RU/DE finance, investment, crypto, fraud-awareness.
+
+# RU
+https://t.me/InvestFuture
+https://t.me/knyazevinvest
+https://t.me/brokertribunal
+https://t.me/fininvestmoney
+https://t.me/Proekt_73
+https://t.me/RBCCrypto
+https://t.me/kramar_finance
+https://t.me/MaxsimPetrov
+https://t.me/coin_post
+https://t.me/cryptokogan
+https://t.me/finansist_busines
+https://t.me/chargeback_ltd_official
+
+# DE
+https://t.me/handelsblattde
+https://t.me/PolizeiBayern
+https://t.me/PhantomSchweiz
+https://t.me/FrMaWa
+
+# Discovery keywords used for expansion:
+# RU: мошенничество, мошенники, брокер, инвестиции, потерял деньги,
+#     не могу вывести, заблокировали вывод, вернуть деньги, крипто, форекс
+# DE: Betrug, Betrüger, Broker, Anlagebetrug, Investmentbetrug,
+#     Geld verloren, Auszahlung blockiert, Geld zurück, Krypto, Forex

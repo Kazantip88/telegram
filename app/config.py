@@ -34,6 +34,7 @@ class Settings:
     min_email_score: int
     hot_score: int
     poll_seconds: int
+    search_limit: int
 
 
 def load_settings() -> Settings:
@@ -43,8 +44,6 @@ def load_settings() -> Settings:
         raise RuntimeError("TG_API_ID and TG_API_HASH are required")
 
     sources = tuple(s.strip() for s in os.getenv("TG_SOURCES", "").split(",") if s.strip())
-    if not sources:
-        raise RuntimeError("TG_SOURCES must contain at least one authorized Telegram source")
 
     db_path = Path(os.getenv("DB_PATH", "data/leads.sqlite3"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,5 +64,6 @@ def load_settings() -> Settings:
         dry_run=_bool("DRY_RUN", True),
         min_email_score=int(os.getenv("MIN_EMAIL_SCORE", "50")),
         hot_score=int(os.getenv("HOT_SCORE", "80")),
-        poll_seconds=int(os.getenv("POLL_SECONDS", "5")),
+        poll_seconds=int(os.getenv("POLL_SECONDS", "300")),
+        search_limit=int(os.getenv("SEARCH_LIMIT", "100")),
     )

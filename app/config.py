@@ -35,6 +35,8 @@ class Settings:
     hot_score: int
     poll_seconds: int
     search_limit: int
+    comments_limit: int
+    comments_active_days: int
 
 
 def load_settings() -> Settings:
@@ -66,4 +68,6 @@ def load_settings() -> Settings:
         hot_score=int(os.getenv("HOT_SCORE", "80")),
         poll_seconds=int(os.getenv("POLL_SECONDS", "300")),
         search_limit=int(os.getenv("SEARCH_LIMIT", "100")),
+        comments_limit=int(os.getenv("COMMENTS_LIMIT", "10")),
+        comments_active_days=int(os.getenv("COMMENTS_ACTIVE_DAYS", "30")),
     )

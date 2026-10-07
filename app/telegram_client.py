@@ -1,65 +1,43 @@
 from __future__ import annotations
 
 import asyncio
-from telethon import TelegramClient, events
+
+from telethon import TelegramClient
+from telethon.errors import FloodWaitError
 
 from .config import Settings
-from .db import fingerprint, save_lead
-from .detector import detect
-from .emailer import build_message
-from .scoring import score_lead
-
-
-def category(signals) -> str:
-    if signals.matched.get("investment"):
-        if any(x in " ".join(signals.matched["investment"]) for x in ("crypto", "krypto", "bitcoin", "крипто", "биткоин")):
-            return "CRYPTO"
-        if any(x in " ".join(signals.matched["investment"]) for x in ("forex", "форекс")):
-            return "FOREX"
-        return "INVESTMENT_SCAM"
-    return "OTHER"
+from .telegram_search import search_once
 
 
 async def run(settings: Settings) -> None:
-    client = TelegramClient(settings.tg_session, settings.tg_api_id, settings.tg_api_hash)
+    client = TelegramClient(
+        settings.tg_session,
+        settings.tg_api_id,
+        settings.tg_api_hash,
+        sequential_updates=True,
+    )
+
     await client.start()
-    print(f"Monitoring {len(settings.tg_sources)} authorized Telegram source(s)")
+    print(f"Read-only monitoring: {len(settings.tg_sources)} configured public source(s)")
+    print("No Telegram messages, reactions, joins, invites, or user outreach are performed.")
 
-    @client.on(events.NewMessage(chats=list(settings.tg_sources)))
-    async def handler(event):
-        text = (event.raw_text or "").strip()
-        if not text:
-            return
-        signals = detect(text)
-        score = score_lead(signals)
-        if score.total < settings.min_email_score:
-            return
+    try:
+        while True:
+            try:
+                stats = await search_once(client, settings)
+                print(
+                    "Cycle: "
+                    f"sources={stats.sources} messages={stats.messages} "
+                    f"comments={stats.comments_checked} qualified={stats.qualified} "
+                    f"hot={stats.hot} normal={stats.normal}"
+                )
+            except FloodWaitError as exc:
+                # Deliberately stop instead of retrying/working around a server limit.
+                print(f"Telegram FLOOD_WAIT received ({exc.seconds}s). Stopping monitor safely.")
+                break
+            except Exception as exc:
+                print(f"Monitoring cycle failed: {exc}")
 
-        sender = await event.get_sender()
-        username = getattr(sender, "username", None)
-        sender_id = str(getattr(sender, "id", "")) or None
-        source = str(getattr(event.chat, "username", None) or event.chat_id)
-        lead = {
-            "fingerprint": fingerprint(source, sender_id, text),
-            "telegram_message_id": event.id,
-            "source": source,
-            "sender_id": sender_id,
-            "username": username,
-            "language": signals.language,
-            "amount": max(signals.amounts) if signals.amounts else None,
-            "score": score.total,
-            "priority": score.priority,
-            "category": category(signals),
-            "message": text,
-            "reasons": score.reasons,
-        }
-        inserted = await save_lead(settings.db_path, lead)
-        if not inserted:
-            return
-
-        msg = build_message(settings, lead)
-        print("\n=== QUALIFIED LEAD ===")
-        print(msg.as_string())
-        print("=== END LEAD ===\n")
-
-    await client.run_until_disconnected()
+            await asyncio.sleep(settings.poll_seconds)
+    finally:
+        await client.disconnect()

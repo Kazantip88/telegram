@@ -1,0 +1,6 @@
+# Add only public Telegram sources that your account is authorized to monitor.
+# One username or public URL per line.
+#
+# Examples (replace with real sources):
+# @public_channel_ru
+# https://t.me/public_channel_de

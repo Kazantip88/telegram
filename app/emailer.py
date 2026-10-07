@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import smtplib
 from email.message import EmailMessage
 
 from .config import Settings
@@ -26,3 +28,21 @@ def build_message(settings: Settings, lead: dict) -> EmailMessage:
     msg["To"] = settings.mail_to
     msg.set_content(build_body(lead))
     return msg
+
+
+def _send_sync(settings: Settings, message: EmailMessage) -> None:
+    if not settings.smtp_host:
+        raise RuntimeError("SMTP_HOST is required when DRY_RUN=false")
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as smtp:
+        if settings.smtp_use_tls:
+            smtp.starttls()
+        if settings.smtp_user:
+            smtp.login(settings.smtp_user, settings.smtp_password)
+        smtp.send_message(message)
+
+
+async def send_message(settings: Settings, message: EmailMessage) -> None:
+    if settings.dry_run:
+        print("DRY_RUN=true: email not sent")
+        return
+    await asyncio.to_thread(_send_sync, settings, message)

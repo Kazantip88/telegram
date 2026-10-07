@@ -63,16 +63,14 @@ def detect(text: str) -> Signals:
 def extract_amounts(text: str) -> list[float]:
     results: list[float] = []
     patterns = [
-        r"(?:€|eur|euro)\s*([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,[0-9]{1,2})?)",
-        r"([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,[0-9]{1,2})?)\s*(?:€|eur|euro)",
-        r"€\s*([0-9]+(?:[.,][0-9]+)?)\s*k\b",
-        r"\b([0-9]+(?:[.,][0-9]+)?)\s*k\b",
+        (r"(?:€|eur|euro)\s*([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,[0-9]{1,2})?)", False),
+        (r"([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,[0-9]{1,2})?)\s*(?:€|eur|euro)", False),
+        (r"€\s*([0-9]+(?:[.,][0-9]+)?)\s*k\b", True),
+        (r"\b([0-9]+(?:[.,][0-9]+)?)\s*k\b", True),
     ]
-    for pattern in patterns:
+    for pattern, is_k in patterns:
         for raw in re.findall(pattern, text, flags=re.I):
             value = raw.replace(" ", "")
-            if value.endswith("k"):
-                value = value[:-1]
             if "," in value and "." in value:
                 value = value.replace(".", "").replace(",", ".")
             elif value.count(".") == 1 and len(value.split(".")[-1]) == 3:
@@ -80,9 +78,7 @@ def extract_amounts(text: str) -> list[float]:
             else:
                 value = value.replace(",", ".")
             try:
-                number = float(value)
-                if pattern.endswith(r"\s*k\b"):
-                    number *= 1000
+                number = float(value) * (1000 if is_k else 1)
                 results.append(number)
             except ValueError:
                 pass

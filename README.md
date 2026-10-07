@@ -13,19 +13,26 @@ The score is a triage signal only. A human must review every lead before any leg
 ## Flow
 
 ```text
-Telegram public sources
-        ↓
-RU/DE keyword detection
-        ↓
-Fraud / loss signal extraction
-        ↓
-Lead scoring
-        ↓
-80+ HOT ───────┐
-50–79 NORMAL ──┼→ email
-<50 IGNORE     │
-        ↓      │
-SQLite dedup ──┘
+Authorized public Telegram sources
+              ↓
+          RU / DE detection
+              ↓
+       fraud / loss signals
+              ↓
+          score 0–100
+          /         \
+       <50          50+
+     IGNORE          ↓
+                ┌────┴────┐
+             50–79       80+
+             NORMAL      HOT
+                └────┬────┘
+                     ↓
+                 SQLite dedup
+                     ↓
+              email to law firm
+                     ↓
+              human lawyer review
 ```
 
 ## Features
@@ -38,17 +45,23 @@ SQLite dedup ──┘
 - Evidence/document signals
 - Duplicate suppression
 - SQLite storage
-- SMTP email delivery
+- Email message generation for the law-firm inbox
 - Dry-run mode for safe testing
 - No automatic Telegram outreach to users
+
+## Source model
+
+The MVP monitors **public Telegram sources that are explicitly configured and authorized** in `TG_SOURCES`. Telegram does not expose an API that guarantees a complete inventory of every public Telegram channel/group, so a claim of scanning 100% of Telegram would be misleading.
+
+For broader coverage, maintain a large registry of public RU/DE sources in `config/public_sources.example.txt` and periodically review/expand it. The monitor can then process the configured sources continuously without contacting their members.
 
 ## Setup
 
 1. Copy `.env.example` to `.env`.
 2. Create a Telegram API application at `my.telegram.org` and put `TG_API_ID` and `TG_API_HASH` in `.env`.
-3. Add Telegram public channels/groups you are authorized to monitor to `TG_SOURCES` (comma-separated usernames or public links).
-4. Configure SMTP.
-5. Start with `DRY_RUN=true`.
+3. Add public channels/groups you are authorized to monitor to `TG_SOURCES` (comma-separated usernames or public links).
+4. Configure the SMTP provider used by the law firm.
+5. Start with `DRY_RUN=true` and review the generated messages before enabling any production mail transport.
 
 ```bash
 python -m venv .venv
@@ -65,6 +78,8 @@ The first Telethon run may ask for a phone number and Telegram login code. Keep 
 Default destination:
 
 `info@lawlegal500.de`
+
+The email contains the priority, score, language, category, detected loss amount, source, message ID, scoring reasons and the public message text. Lawyers decide whether and how to contact the person; the monitor does not send Telegram DMs.
 
 ## Safety / privacy
 

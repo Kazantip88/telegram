@@ -37,6 +37,10 @@ class Settings:
     search_limit: int
     comments_limit: int
     comments_active_days: int
+    messages_per_source: int
+    comment_posts_per_source: int
+    request_delay_seconds: float
+    jitter_seconds: float
 
 
 def load_settings() -> Settings:
@@ -46,6 +50,8 @@ def load_settings() -> Settings:
         raise RuntimeError("TG_API_ID and TG_API_HASH are required")
 
     sources = tuple(s.strip() for s in os.getenv("TG_SOURCES", "").split(",") if s.strip())
+    if not sources:
+        raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
 
     db_path = Path(os.getenv("DB_PATH", "data/leads.sqlite3"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,7 +59,7 @@ def load_settings() -> Settings:
     return Settings(
         tg_api_id=int(api_id),
         tg_api_hash=api_hash,
-        tg_session=os.getenv("TG_SESSION", "telegram_leads"),
+        tg_session=os.getenv("TG_SESSION", "data/telegram_leads"),
         tg_sources=sources,
         smtp_host=os.getenv("SMTP_HOST", ""),
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
@@ -66,8 +72,12 @@ def load_settings() -> Settings:
         dry_run=_bool("DRY_RUN", True),
         min_email_score=int(os.getenv("MIN_EMAIL_SCORE", "50")),
         hot_score=int(os.getenv("HOT_SCORE", "80")),
-        poll_seconds=int(os.getenv("POLL_SECONDS", "300")),
-        search_limit=int(os.getenv("SEARCH_LIMIT", "100")),
-        comments_limit=int(os.getenv("COMMENTS_LIMIT", "10")),
-        comments_active_days=int(os.getenv("COMMENTS_ACTIVE_DAYS", "30")),
+        poll_seconds=max(60, int(os.getenv("POLL_SECONDS", "900"))),
+        search_limit=max(1, int(os.getenv("SEARCH_LIMIT", "25"))),
+        comments_limit=max(1, int(os.getenv("COMMENTS_LIMIT", "5"))),
+        comments_active_days=max(1, int(os.getenv("COMMENTS_ACTIVE_DAYS", "30"))),
+        messages_per_source=max(1, int(os.getenv("MESSAGES_PER_SOURCE", "50"))),
+        comment_posts_per_source=max(0, int(os.getenv("COMMENT_POSTS_PER_SOURCE", "5"))),
+        request_delay_seconds=max(0.0, float(os.getenv("REQUEST_DELAY_SECONDS", "3"))),
+        jitter_seconds=max(0.0, float(os.getenv("JITTER_SECONDS", "2"))),
     )

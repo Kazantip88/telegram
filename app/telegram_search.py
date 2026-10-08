@@ -104,6 +104,23 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
 
                 replies = getattr(message, "replies", None)
                 reply_count = int(getattr(replies, "replies", 0) or 0) if replies else 0
+
+                # Always inspect the public post itself, even when it has no discussion.
+                priority = await _save_candidate(
+                    settings,
+                    source_name,
+                    message.id,
+                    text,
+                    str(message.sender_id) if message.sender_id else None,
+                    None,
+                )
+                if priority is not None:
+                    qualified += 1
+                    if priority == "HOT":
+                        hot += 1
+                    else:
+                        normal += 1
+
                 if reply_count <= 0:
                     posts_without_comments += 1
                     continue
@@ -128,20 +145,14 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
                     inactive_discussions += 1
                     continue
 
-                candidates = [(message.id, text, str(message.sender_id) if message.sender_id else None, None)]
-                candidates.extend(
-                    (message.id, comment_text, None, message.id)
-                    for comment_text in discussion.comments
-                )
-
-                for message_id, candidate_text, sender_id, parent_id in candidates:
+                for comment_text in discussion.comments:
                     priority = await _save_candidate(
                         settings,
                         source_name,
-                        message_id,
-                        candidate_text,
-                        sender_id,
-                        parent_id,
+                        message.id,
+                        comment_text,
+                        None,
+                        message.id,
                     )
                     if priority is None:
                         continue

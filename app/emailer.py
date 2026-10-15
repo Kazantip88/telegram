@@ -16,7 +16,7 @@ def build_subject(lead: dict) -> str:
 def build_body(lead: dict) -> str:
     reasons = "\n".join(f"- {r}" for r in lead.get("reasons", [])) or "- none"
     amount = f"EUR {lead['amount']:,.0f}" if lead.get("amount") else "Not detected"
-    return f"""New Telegram lead\n\nPriority: {lead['priority']}\nScore: {lead['score']}/100\nLanguage: {lead.get('language', 'unknown')}\nCategory: {lead.get('category', 'Unknown')}\nPotential loss: {amount}\nSource: {lead['source']}\nUsername: {lead.get('username') or 'not available'}\nMessage ID: {lead.get('telegram_message_id') or 'n/a'}\n\nScoring reasons:\n{reasons}\n\nOriginal public message:\n{lead['message']}\n\nHuman review is required before any legal or commercial decision.\n"""
+    return f"""New lead\n\nPriority: {lead['priority']}\nScore: {lead['score']}/100\nLanguage: {lead.get('language', 'unknown')}\nCategory: {lead.get('category', 'Unknown')}\nPotential loss: {amount}\nSource: {lead['source']}\nUsername: {lead.get('username') or 'not available'}\nMessage ID: {lead.get('telegram_message_id') or 'n/a'}\n\nScoring reasons:\n{reasons}\n\nOriginal public message:\n{lead['message']}\n\nHuman review is required before any legal or commercial decision.\n"""
 
 
 def build_message(settings: Settings, lead: dict) -> EmailMessage:

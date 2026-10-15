@@ -5,7 +5,6 @@ import html
 import os
 import re
 from dataclasses import dataclass
-from email.message import Message
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -118,6 +117,34 @@ def _build_text(headers: dict[str, str], payload: dict) -> tuple[str, str | None
     return text, sender or None
 
 
+def _has_personal_victim_language(text: str) -> bool:
+    """Require a first-person/direct-help signal for Gmail leads.
+
+    Google Alerts aggregates news and legal articles, so ordinary third-person
+    phrases such as "a man lost EUR 44,000" must not become client leads.
+    """
+    t = text.lower().replace("ё", "е")
+    patterns = (
+        # Russian first-person loss/fraud/withdrawal/help.
+        r"\bя\s+(?:потерял|потеряла|вложил|вложила|инвестировал|инвестировала)\b",
+        r"\bменя\s+(?:обманули|развели)\b",
+        r"\bу\s+меня\s+(?:украли|заблокировали|не\s+выводят)\b",
+        r"\bя\s+не\s+могу\s+вывести\b",
+        r"\bпомогите\s+(?:вернуть|возвратить)\b",
+        r"\bкак\s+вернуть\s+(?:мои\s+)?деньги\b",
+        r"\bчто\s+делать\s+.*(?:деньг|брокер|мошенн)",
+        # German first-person loss/fraud/withdrawal/help.
+        r"\bich\s+(?:habe|hatte)\b.{0,80}\b(?:verloren|investiert|bezahlt|überwiesen)\b",
+        r"\bich\s+wurde\s+betrogen\b",
+        r"\bmir\s+wurde\b.{0,80}\b(?:geld|konto|auszahlung)\b",
+        r"\bich\s+kann\s+(?:mein\s+)?geld\s+nicht\s+(?:auszahlen|abheben)\b",
+        r"\bwie\s+bekomme\s+ich\s+mein\s+geld\s+zurück\b",
+        r"\bich\s+brauche\s+(?:hilfe|einen\s+anwalt|rechtliche\s+hilfe)\b",
+        r"\bwas\s+kann\s+ich\s+(?:tun|machen)\b",
+    )
+    return any(re.search(pattern, t, flags=re.I | re.S) for pattern in patterns)
+
+
 def _category(signals) -> str:
     investment = " ".join(signals.matched.get("investment", []))
     lowered = investment.lower()
@@ -151,6 +178,11 @@ async def collect_once(settings) -> GmailStats:
         headers = _headers(full.get("payload", {}))
         text, sender = _build_text(headers, full.get("payload", {}))
         if not text:
+            continue
+
+        # Google Alerts commonly contains news/legal articles. Do not turn a
+        # third-person report about another victim into a client lead.
+        if not _has_personal_victim_language(text):
             continue
 
         signals = detect(text)

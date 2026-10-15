@@ -7,4 +7,6 @@ __pycache__/
 data/*.sqlite3
 data/*.db
 logs/
+credentials*.json
+token*.json
 .DS_Store

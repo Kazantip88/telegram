@@ -22,6 +22,16 @@ async def main() -> None:
     settings = SimpleNamespace(
         db_path=Path(os.getenv("DB_PATH", "data/leads.sqlite3")),
         min_email_score=int(os.getenv("MIN_EMAIL_SCORE", "50")),
+        dry_run=os.getenv("DRY_RUN", "true").strip().lower()
+        in {"1", "true", "yes", "y", "on"},
+        smtp_host=os.getenv("SMTP_HOST", ""),
+        smtp_port=int(os.getenv("SMTP_PORT", "587")),
+        smtp_user=os.getenv("SMTP_USER", ""),
+        smtp_password=os.getenv("SMTP_PASSWORD", ""),
+        mail_from=os.getenv("MAIL_FROM", ""),
+        mail_to=os.getenv("MAIL_TO", ""),
+        smtp_use_tls=os.getenv("SMTP_USE_TLS", "true").strip().lower()
+        in {"1", "true", "yes", "y", "on"},
     )
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
 

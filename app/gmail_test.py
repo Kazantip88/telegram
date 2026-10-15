@@ -3,26 +3,28 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 from dotenv import load_dotenv
 
-from .config import Settings
 from .gmail_alerts import collect_once
 
 
 async def main() -> None:
     load_dotenv()
 
-    required = {
-        "GMAIL_ENABLED": os.getenv("GMAIL_ENABLED", "true"),
-        "GMAIL_CLIENT_SECRET_FILE": os.getenv(
-            "GMAIL_CLIENT_SECRET_FILE", "data/google_client_secret.json"
-        ),
-    }
-    print(f"GMAIL_ENABLED={required['GMAIL_ENABLED']}")
-    print(f"OAuth JSON exists: {Path(required['GMAIL_CLIENT_SECRET_FILE']).exists()}")
+    client_file = os.getenv(
+        "GMAIL_CLIENT_SECRET_FILE", "data/google_client_secret.json"
+    )
+    print(f"GMAIL_ENABLED={os.getenv('GMAIL_ENABLED', 'true')}")
+    print(f"OAuth JSON exists: {Path(client_file).exists()}")
 
-    settings = Settings()
+    settings = SimpleNamespace(
+        db_path=Path(os.getenv("DB_PATH", "data/leads.sqlite3")),
+        min_email_score=int(os.getenv("MIN_EMAIL_SCORE", "50")),
+    )
+    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
+
     stats = await collect_once(settings)
     print(
         "Gmail test complete: "

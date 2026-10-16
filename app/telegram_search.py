@@ -47,7 +47,15 @@ async def _pause(settings) -> None:
         await asyncio.sleep(delay)
 
 
-async def _save_candidate(settings, source: str, telegram_message_id: int, text: str, sender_id: str | None, parent_id: int | None = None):
+async def _save_candidate(
+    settings,
+    source: str,
+    telegram_message_id: int,
+    text: str,
+    sender_id: str | None,
+    username: str | None = None,
+    parent_id: int | None = None,
+):
     signals = detect(text)
     result = score_lead(signals)
     if result.total < settings.min_email_score:
@@ -56,13 +64,16 @@ async def _save_candidate(settings, source: str, telegram_message_id: int, text:
     reasons = list(result.reasons)
     if parent_id:
         reasons.append(f"discussion_parent={parent_id}")
+    if username:
+        reasons.append(f"public_username=@{username}")
+        reasons.append(f"profile_url=https://t.me/{username}")
 
     lead = {
         "fingerprint": fingerprint(source, sender_id, text),
         "telegram_message_id": telegram_message_id,
         "source": source,
         "sender_id": sender_id,
-        "username": None,
+        "username": username,
         "language": signals.language,
         "amount": max(signals.amounts) if signals.amounts else None,
         "score": result.total,
@@ -81,6 +92,17 @@ async def _save_candidate(settings, source: str, telegram_message_id: int, text:
     print("=== END LEAD ===\n")
     await send_message(settings, msg)
     return result.priority
+
+
+async def _public_username(message) -> str | None:
+    sender = getattr(message, "sender", None)
+    if sender is None:
+        try:
+            sender = await message.get_sender()
+        except Exception:
+            return None
+    username = getattr(sender, "username", None)
+    return str(username).strip() if username else None
 
 
 async def search_once(client: TelegramClient, settings) -> SearchStats:
@@ -112,6 +134,7 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
                     message.id,
                     text,
                     str(message.sender_id) if message.sender_id else None,
+                    None,
                     None,
                 )
                 if priority is not None:
@@ -145,13 +168,14 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
                     inactive_discussions += 1
                     continue
 
-                for comment_text in discussion.comments:
+                for comment_text, username in zip(discussion.comments, discussion.authors):
                     priority = await _save_candidate(
                         settings,
                         source_name,
                         message.id,
                         comment_text,
                         None,
+                        username,
                         message.id,
                     )
                     if priority is None:

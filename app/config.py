@@ -47,14 +47,14 @@ class Settings:
     rss_request_delay_seconds: float
 
 
-def load_settings() -> Settings:
+def load_settings(require_telegram: bool = True) -> Settings:
     api_id = os.getenv("TG_API_ID", "").strip()
     api_hash = os.getenv("TG_API_HASH", "").strip()
-    if not api_id or not api_hash:
+    if require_telegram and (not api_id or not api_hash):
         raise RuntimeError("TG_API_ID and TG_API_HASH are required")
 
     sources = tuple(s.strip() for s in os.getenv("TG_SOURCES", "").split(",") if s.strip())
-    if not sources:
+    if require_telegram and not sources:
         raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
 
     rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
@@ -63,7 +63,7 @@ def load_settings() -> Settings:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     return Settings(
-        tg_api_id=int(api_id),
+        tg_api_id=int(api_id or "0"),
         tg_api_hash=api_hash,
         tg_session=os.getenv("TG_SESSION", "data/telegram_leads"),
         tg_sources=sources,

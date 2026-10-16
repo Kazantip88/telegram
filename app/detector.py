@@ -60,7 +60,8 @@ def detect(text: str) -> Signals:
     t = text.lower().replace("ё", "е")
     dictionaries = (("ru", RU), ("de", DE), ("en", EN))
     scores = {language: sum(any(p in t for p in values) for values in dictionary.values()) for language, dictionary in dictionaries}
-    language, dictionary = max(scores.items(), key=lambda pair: pair[1])
+    language = max(scores, key=scores.get)
+    dictionary = dict(dictionaries)[language]
     if scores[language] == 0:
         language, dictionary = "unknown", RU
     matched: dict[str, list[str]] = {}

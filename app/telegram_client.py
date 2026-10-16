@@ -6,7 +6,8 @@ from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 
 from .config import Settings
-from .gmail_alerts import collect_once
+from .gmail_alerts import collect_once as collect_gmail_once
+from .rss_leads import collect_once as collect_rss_once
 from .telegram_search import search_once
 
 
@@ -22,6 +23,7 @@ async def run(settings: Settings) -> None:
     print(f"Read-only Telegram monitoring: {len(settings.tg_sources)} configured public source(s)")
     print("No Telegram messages, reactions, joins, invites, or user outreach are performed.")
     print("Gmail collector uses readonly OAuth and does not mark messages as read.")
+    print(f"RSS public-feed collector: {len(settings.rss_feeds)} configured feed(s)")
 
     try:
         while True:
@@ -41,7 +43,7 @@ async def run(settings: Settings) -> None:
                 print(f"Telegram monitoring cycle failed: {exc}")
 
             try:
-                gmail_stats = await collect_once(settings)
+                gmail_stats = await collect_gmail_once(settings)
                 print(
                     "Gmail Alerts cycle: "
                     f"messages={gmail_stats.messages} qualified={gmail_stats.qualified} "
@@ -49,6 +51,17 @@ async def run(settings: Settings) -> None:
                 )
             except Exception as exc:
                 print(f"Gmail collector cycle failed: {exc}")
+
+            try:
+                rss_stats = await collect_rss_once(settings)
+                print(
+                    "RSS cycle: "
+                    f"feeds={rss_stats.feeds} items={rss_stats.items} "
+                    f"personal={rss_stats.personal_items} qualified={rss_stats.qualified} "
+                    f"hot={rss_stats.hot} normal={rss_stats.normal}"
+                )
+            except Exception as exc:
+                print(f"RSS collector cycle failed: {exc}")
 
             await asyncio.sleep(settings.poll_seconds)
     finally:

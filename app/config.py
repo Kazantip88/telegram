@@ -44,6 +44,7 @@ class Settings:
     rss_feeds: tuple[str, ...]
     rss_max_items: int
     rss_timeout_seconds: int
+    rss_request_delay_seconds: float
 
 
 def load_settings() -> Settings:
@@ -88,4 +89,5 @@ def load_settings() -> Settings:
         rss_feeds=rss_feeds,
         rss_max_items=max(1, int(os.getenv("RSS_MAX_ITEMS", "50"))),
         rss_timeout_seconds=max(5, int(os.getenv("RSS_TIMEOUT_SECONDS", "20"))),
+        rss_request_delay_seconds=max(0.0, float(os.getenv("RSS_REQUEST_DELAY_SECONDS", "2"))),
     )

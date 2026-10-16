@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import html
+import random
 import re
-import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
 from .db import fingerprint, save_lead
@@ -91,9 +90,8 @@ def _items(xml: bytes) -> list[dict[str, str]]:
             summary = f"{summary} {content}".strip()
         link = _link(node)
         author = _first_child(node, ("author", "creator", "name"))
-        published = _first_child(node, ("pubdate", "published", "updated", "date"))
         if title or summary:
-            result.append({"title": title, "summary": summary, "link": link, "author": author, "published": published})
+            result.append({"title": title, "summary": summary, "link": link, "author": author})
     return result
 
 
@@ -180,7 +178,13 @@ async def collect_once(settings) -> RSSStats:
         return RSSStats()
 
     items = personal = qualified = hot = normal = 0
-    for feed_url in feeds:
+    for index, feed_url in enumerate(feeds):
+        if index:
+            delay = settings.rss_request_delay_seconds
+            if settings.jitter_seconds:
+                delay += random.uniform(0, settings.jitter_seconds)
+            if delay > 0:
+                await asyncio.sleep(delay)
         try:
             payload = await asyncio.to_thread(_fetch_sync, feed_url, settings.rss_timeout_seconds)
             feed_items = _items(payload)[: settings.rss_max_items]

@@ -41,6 +41,9 @@ class Settings:
     comment_posts_per_source: int
     request_delay_seconds: float
     jitter_seconds: float
+    rss_feeds: tuple[str, ...]
+    rss_max_items: int
+    rss_timeout_seconds: int
 
 
 def load_settings() -> Settings:
@@ -52,6 +55,8 @@ def load_settings() -> Settings:
     sources = tuple(s.strip() for s in os.getenv("TG_SOURCES", "").split(",") if s.strip())
     if not sources:
         raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
+
+    rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
 
     db_path = Path(os.getenv("DB_PATH", "data/leads.sqlite3"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,4 +85,7 @@ def load_settings() -> Settings:
         comment_posts_per_source=max(0, int(os.getenv("COMMENT_POSTS_PER_SOURCE", "5"))),
         request_delay_seconds=max(0.0, float(os.getenv("REQUEST_DELAY_SECONDS", "3"))),
         jitter_seconds=max(0.0, float(os.getenv("JITTER_SECONDS", "2"))),
+        rss_feeds=rss_feeds,
+        rss_max_items=max(1, int(os.getenv("RSS_MAX_ITEMS", "50"))),
+        rss_timeout_seconds=max(5, int(os.getenv("RSS_TIMEOUT_SECONDS", "20"))),
     )

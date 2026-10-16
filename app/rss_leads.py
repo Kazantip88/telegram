@@ -41,6 +41,17 @@ _DE_PERSONAL = (
     r"\bich\s+bekomme\s+mein\s+geld\s+nicht\s+zurück\b",
     r"\bich\s+brauche\s+(?:hilfe|einen\s+anwalt|rechtliche\s+hilfe)\b",
 )
+_EN_PERSONAL = (
+    r"\bi\s+(?:lost|invested|deposited|transferred|paid)\b",
+    r"\bi\s+(?:lost|invested)\s+(?:my\s+)?(?:money|savings|funds)\b",
+    r"\bi\s+(?:was\s+)?scammed\b",
+    r"\bi\s+was\s+defrauded\b",
+    r"\bthey\s+(?:took|stole)\s+(?:my\s+)?money\b",
+    r"\bi\s+(?:can't|cannot|can\s+not|am\s+unable\s+to)\s+(?:withdraw|cash\s*out)\b",
+    r"\bmy\s+withdrawal\s+(?:is\s+)?blocked\b",
+    r"\bi\s+(?:can't|cannot)\s+get\s+my\s+money\s+back\b",
+    r"\bi\s+need\s+(?:a\s+lawyer|legal\s+help|help\s+getting\s+my\s+money\s+back)\b",
+)
 
 
 def _clean(value: str) -> str:
@@ -59,6 +70,10 @@ def _first_child(parent: ET.Element, names: tuple[str, ...]) -> str:
     for child in list(parent):
         tag = child.tag.rsplit("}", 1)[-1].lower()
         if tag in names:
+            if tag == "author":
+                nested_name = _first_child(child, ("name",))
+                if nested_name:
+                    return nested_name
             return _text(child)
     return ""
 
@@ -97,7 +112,7 @@ def _items(xml: bytes) -> list[dict[str, str]]:
 
 def _personal_victim_language(text: str) -> bool:
     lowered = text.lower()
-    return any(re.search(pattern, lowered) for pattern in (*_RU_PERSONAL, *_DE_PERSONAL))
+    return any(re.search(pattern, lowered) for pattern in (*_RU_PERSONAL, *_DE_PERSONAL, *_EN_PERSONAL))
 
 
 def _category(signals) -> str:

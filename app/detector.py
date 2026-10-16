@@ -23,6 +23,16 @@ DE = {
     "help": ["geld zurück", "geld zurückholen", "zurückbekommen", "anwalt", "rechtsanwalt", "rechtliche hilfe", "was kann ich tun", "hilfe"],
 }
 
+EN = {
+    "loss": ["lost money", "lost my money", "lost my savings", "lost funds", "stolen", "they took my money", "scammed"],
+    "fraud": ["fraud", "fraudster", "scam", "scammed", "investment scam", "investment fraud"],
+    "withdrawal": ["can't withdraw", "cannot withdraw", "unable to withdraw", "withdrawal blocked", "withdrawal is blocked", "can't cash out", "cannot cash out"],
+    "support": ["support doesn't reply", "support does not reply", "support stopped responding", "broker doesn't reply", "broker does not reply", "broker disappeared", "no response"],
+    "evidence": ["screenshots", "evidence", "documents", "contract", "transaction", "bank transfer", "bank statement"],
+    "investment": ["invested", "investment", "broker", "exchange", "forex", "crypto", "cryptocurrency", "bitcoin", "trading"],
+    "help": ["get my money back", "get my money returned", "money back", "lawyer", "legal help", "what can i do", "i need help"],
+}
+
 @dataclass
 class Signals:
     language: str = "unknown"
@@ -48,10 +58,11 @@ class Signals:
 
 def detect(text: str) -> Signals:
     t = text.lower().replace("ё", "е")
-    ru_hits = sum(any(p in t for p in values) for values in RU.values())
-    de_hits = sum(any(p in t for p in values) for values in DE.values())
-    dictionary = RU if ru_hits >= de_hits else DE
-    language = "ru" if dictionary is RU else "de"
+    dictionaries = (("ru", RU), ("de", DE), ("en", EN))
+    scores = {language: sum(any(p in t for p in values) for values in dictionary.values()) for language, dictionary in dictionaries}
+    language, dictionary = max(scores.items(), key=lambda pair: pair[1])
+    if scores[language] == 0:
+        language, dictionary = "unknown", RU
     matched: dict[str, list[str]] = {}
     for category, phrases in dictionary.items():
         hits = [p for p in phrases if p in t]
@@ -67,12 +78,16 @@ def extract_amounts(text: str) -> list[float]:
         (r"([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,[0-9]{1,2})?)\s*(?:€|eur|euro)", False),
         (r"€\s*([0-9]+(?:[.,][0-9]+)?)\s*k\b", True),
         (r"\b([0-9]+(?:[.,][0-9]+)?)\s*k\b", True),
+        (r"(?:\$|usd|dollars?)\s*([0-9]{1,3}(?:[,.\s][0-9]{3})*(?:[.,][0-9]{1,2})?)", False),
+        (r"([0-9]{1,3}(?:[,.\s][0-9]{3})*(?:[.,][0-9]{1,2})?)\s*(?:\$|usd|dollars?)", False),
     ]
     for pattern, is_k in patterns:
         for raw in re.findall(pattern, text, flags=re.I):
             value = raw.replace(" ", "")
             if "," in value and "." in value:
-                value = value.replace(".", "").replace(",", ".")
+                value = value.replace(",", "") if value.rfind(",") < value.rfind(".") else value.replace(".", "").replace(",", ".")
+            elif value.count(",") == 1 and len(value.split(",")[-1]) == 3:
+                value = value.replace(",", "")
             elif value.count(".") == 1 and len(value.split(".")[-1]) == 3:
                 value = value.replace(".", "")
             else:

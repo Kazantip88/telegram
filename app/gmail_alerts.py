@@ -16,9 +16,11 @@ from googleapiclient.discovery import build
 from .db import fingerprint, save_lead
 from .detector import detect
 from .emailer import build_message, send_message
+from .lead_classifier import classify
 from .scoring import score_lead
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+
 
 @dataclass(frozen=True)
 class GmailStats:
@@ -27,8 +29,10 @@ class GmailStats:
     hot: int = 0
     normal: int = 0
 
+
 def _setting(name: str, default: str) -> str:
     return os.getenv(name, default).strip()
+
 
 def _credentials() -> Credentials:
     client_file = Path(_setting("GMAIL_CLIENT_SECRET_FILE", "data/google_client_secret.json"))
@@ -47,11 +51,13 @@ def _credentials() -> Credentials:
     token_file.write_text(creds.to_json(), encoding="utf-8")
     return creds
 
+
 def _decode(data: str) -> str:
     if not data:
         return ""
     padding = "=" * (-len(data) % 4)
     return base64.urlsafe_b64decode((data + padding).encode()).decode("utf-8", errors="replace")
+
 
 def _strip_html(value: str) -> str:
     value = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", value)
@@ -60,9 +66,11 @@ def _strip_html(value: str) -> str:
     value = re.sub(r"<[^>]+>", " ", value)
     return html.unescape(re.sub(r"\s+", " ", value)).strip()
 
+
 def _parts(payload: dict) -> tuple[str, str]:
     plain: list[str] = []
     html_parts: list[str] = []
+
     def walk(part: dict) -> None:
         mime = part.get("mimeType", "")
         data = (part.get("body", {}) or {}).get("data")
@@ -74,14 +82,22 @@ def _parts(payload: dict) -> tuple[str, str]:
                 html_parts.append(text)
         for child in part.get("parts", []) or []:
             walk(child)
+
     walk(payload)
     return "\n".join(plain).strip(), "\n".join(html_parts).strip()
+
 
 def _headers(payload: dict) -> dict[str, str]:
     return {str(x.get("name", "")).lower(): str(x.get("value", "")) for x in payload.get("headers", []) or []}
 
-def _links(text: str) -> list[str]:
-    return re.findall(r"https?://[^\s<>\"']+", text)
+
+def _build_text(headers: dict[str, str], payload: dict) -> tuple[str, str | None]:
+    plain, html_body = _parts(payload)
+    body = plain or _strip_html(html_body)
+    subject = headers.get("subject", "").strip()
+    sender = headers.get("from", "").strip()
+    return "\n\n".join(x for x in (subject, body) if x).strip(), sender or None
+
 
 def _unwrap_google_url(url: str) -> str:
     parsed = urlparse(url)
@@ -91,18 +107,13 @@ def _unwrap_google_url(url: str) -> str:
             return unquote(target)
     return url
 
-def _build_text(headers: dict[str, str], payload: dict) -> tuple[str, str | None]:
-    plain, html_body = _parts(payload)
-    body = plain or _strip_html(html_body)
-    subject = headers.get("subject", "").strip()
-    sender = headers.get("from", "").strip()
-    return "\n\n".join(x for x in (subject, body) if x).strip(), sender or None
 
 def _extract_alert_items(text: str) -> list[tuple[str, str | None]]:
-    """Split Google Alerts into separate result segments using URL boundaries."""
+    """Split one Google Alert email into independent result segments."""
     matches = list(re.finditer(r"https?://[^\s<>\"']+", text))
     unique: list[tuple[int, int, str]] = []
     seen: set[str] = set()
+
     for match in matches:
         raw = match.group(0).rstrip(".,)")
         destination = _unwrap_google_url(raw)
@@ -115,6 +126,7 @@ def _extract_alert_items(text: str) -> list[tuple[str, str | None]]:
             continue
         seen.add(key)
         unique.append((match.start(), match.end(), destination))
+
     if not unique:
         return [(text, None)]
 
@@ -123,7 +135,6 @@ def _extract_alert_items(text: str) -> list[tuple[str, str | None]]:
         start = unique[i - 1][1] if i else 0
         segment = text[start:url_start].strip()
         if i == 0:
-            # Drop Google Alert subject/header boilerplate before the first result.
             marker = re.search(r"===\s*Web\s*-\s*\d+\s+new results.*?===", segment, re.I | re.S)
             if marker:
                 segment = segment[marker.end():].strip()
@@ -132,41 +143,6 @@ def _extract_alert_items(text: str) -> list[tuple[str, str | None]]:
             items.append((segment, destination))
     return items or [(text, None)]
 
-def _source_kind(url: str | None, item_text: str) -> str:
-    if not url:
-        return "unknown"
-    parsed = urlparse(url)
-    host = parsed.netloc.lower().removeprefix("www.")
-    path = parsed.path.lower()
-    title = item_text.lower()
-    news_hosts = {"tass.ru", "ria.ru", "rbc.ru", "kommersant.ru", "lenta.ru", "gazeta.ru", "interfax.ru", "forbes.ru", "focus.de", "spiegel.de", "faz.net", "welt.de", "bild.de"}
-    qna_hosts = {"banki.ru", "stackoverflow.com", "quora.com", "gutefrage.net"}
-    if host in qna_hosts:
-        return "qna"
-    if host in news_hosts or any(x in title for x in ("новости", "nachrichten")):
-        return "news"
-    if any(x in path for x in ("/otzyv", "/otzyvy", "/reviews", "/review/", "/news/", "/article/")):
-        return "article"
-    return "public"
-
-def _has_personal_victim_language(text: str) -> bool:
-    """Strong first-person/direct-victim signal only; generic article phrases do not qualify."""
-    t = text.lower().replace("ё", "е")
-    patterns = (
-        r"\bя\s+(?:потерял|потеряла|вложил|вложила|инвестировал|инвестировала)\b",
-        r"\bя\s+(?:потерял|потеряла)\s+(?:деньги|сбережения|средства)\b",
-        r"\bменя\s+(?:обманули|развели|обокрали)\b",
-        r"\bу\s+меня\s+(?:украли|заблокировали|пропали)\b",
-        r"\bу\s+меня\s+(?:не\s+выводят|заблокирован\s+вывод|заблокировали\s+вывод)\b",
-        r"\bя\s+не\s+могу\s+вывести\s+(?:деньги|средства|свой\s+депозит|свои\s+деньги)\b",
-        r"\bich\s+(?:habe|hatte)\b.{0,80}\b(?:verloren|investiert|bezahlt|überwiesen)\b",
-        r"\bich\s+wurde\s+betrogen\b",
-        r"\bmir\s+wurde\b.{0,80}\b(?:geld|konto|auszahlung)\b",
-        r"\bich\s+kann\s+(?:mein\s+)?geld\s+nicht\s+(?:auszahlen|abheben)\b",
-        r"\bich\s+bekomme\s+mein\s+geld\s+nicht\s+zur[üu]ck\b",
-        r"\bich\s+brauche\s+(?:hilfe|einen\s+anwalt|rechtliche\s+hilfe)\b",
-    )
-    return any(re.search(pattern, t, flags=re.I | re.S) for pattern in patterns)
 
 def _category(signals) -> str:
     investment = " ".join(signals.matched.get("investment", []))
@@ -179,13 +155,20 @@ def _category(signals) -> str:
         return "INVESTMENT_SCAM"
     return "OTHER"
 
+
 async def collect_once(settings) -> GmailStats:
     if _setting("GMAIL_ENABLED", "true").lower() not in {"1", "true", "yes", "on"}:
         return GmailStats()
+
     creds = _credentials()
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    response = service.users().messages().list(userId="me", q=_setting("GMAIL_QUERY", ""), maxResults=max(1, int(_setting("GMAIL_MAX_MESSAGES", "50")))).execute()
+    response = service.users().messages().list(
+        userId="me",
+        q=_setting("GMAIL_QUERY", ""),
+        maxResults=max(1, int(_setting("GMAIL_MAX_MESSAGES", "50"))),
+    ).execute()
     items = response.get("messages", []) or []
+
     qualified = hot = normal = 0
     for item in items:
         message_id = str(item["id"])
@@ -194,17 +177,30 @@ async def collect_once(settings) -> GmailStats:
         text, sender = _build_text(headers, full.get("payload", {}))
         if not text:
             continue
+
         for item_text, item_url in _extract_alert_items(text):
-            kind = _source_kind(item_url, item_text)
-            if kind in {"news", "qna", "article"} or not _has_personal_victim_language(item_text):
+            classification = classify(item_text, item_url, source="gmail:google-alerts")
+
+            # Google Alerts are noisy: legal pages, news articles and generic
+            # broker warnings are intelligence, not client leads. Only a direct
+            # first-person victim signal may enter the lead scoring stage.
+            if classification.kind != "lead":
                 continue
+
             signals = detect(item_text)
             result = score_lead(signals)
             if result.total < settings.min_email_score:
                 continue
+
             source = "gmail:google-alerts"
+            reasons = list(result.reasons)
+            reasons.extend(classification.reasons)
+            reasons.append(f"gmail_message_id={message_id}")
+            if item_url:
+                reasons.append(f"source_url={item_url}")
+
             lead = {
-                "fingerprint": fingerprint(source, message_id + "|" + (item_url or ""), item_text),
+                "fingerprint": fingerprint(source, item_url or message_id, item_text),
                 "telegram_message_id": None,
                 "source": source,
                 "sender_id": message_id,
@@ -215,11 +211,12 @@ async def collect_once(settings) -> GmailStats:
                 "priority": result.priority,
                 "category": _category(signals),
                 "message": item_text,
-                "reasons": list(result.reasons) + [f"gmail_message_id={message_id}"] + ([f"source_url={item_url}"] if item_url else []),
+                "reasons": reasons,
             }
             inserted = await save_lead(settings.db_path, lead)
             if not inserted:
                 continue
+
             msg = build_message(settings, lead)
             print("\n=== GMAIL QUALIFIED LEAD ===")
             print(msg.as_string())
@@ -230,4 +227,5 @@ async def collect_once(settings) -> GmailStats:
                 hot += 1
             else:
                 normal += 1
+
     return GmailStats(messages=len(items), qualified=qualified, hot=hot, normal=normal)

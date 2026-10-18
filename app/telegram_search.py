@@ -11,6 +11,7 @@ from .db import fingerprint, save_lead
 from .detector import detect
 from .discussion_filter import inspect_discussion
 from .emailer import build_message, send_message
+from .lead_classifier import classify
 from .scoring import score_lead
 
 
@@ -56,12 +57,20 @@ async def _save_candidate(
     username: str | None = None,
     parent_id: int | None = None,
 ):
+    # Telegram posts/comments are user-generated public content, so they do not
+    # need the URL/source classification used by Google Alerts. They do need the
+    # same direct-victim gate: generic investment questions and third-person
+    # stories must not become client leads just because they contain keywords.
+    classification = classify(text, source=source)
+    if classification.kind != "lead":
+        return None
+
     signals = detect(text)
     result = score_lead(signals)
     if result.total < settings.min_email_score:
         return None
 
-    reasons = list(result.reasons)
+    reasons = list(result.reasons) + list(classification.reasons)
     if parent_id:
         reasons.append(f"discussion_parent={parent_id}")
     if username:
@@ -127,7 +136,6 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
                 replies = getattr(message, "replies", None)
                 reply_count = int(getattr(replies, "replies", 0) or 0) if replies else 0
 
-                # Always inspect the public post itself, even when it has no discussion.
                 priority = await _save_candidate(
                     settings,
                     source_name,
@@ -148,7 +156,6 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
                     posts_without_comments += 1
                     continue
 
-                # Discussion reads are deliberately capped per source per cycle.
                 if comment_posts >= settings.comment_posts_per_source:
                     continue
 
@@ -187,7 +194,6 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
                         normal += 1
 
         except FloodWaitError:
-            # Never retry or work around a Telegram flood limit automatically.
             raise
         except Exception as exc:
             print(f"Source failed for {source!r}: {exc}")

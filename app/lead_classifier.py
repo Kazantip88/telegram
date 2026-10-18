@@ -36,29 +36,6 @@ NEWS_HOSTS = {
     "bild.de",
 }
 
-LEGAL_MARKERS = (
-    "anwalt",
-    "rechtsanwalt",
-    "rechtsberatung",
-    "rechtstipp",
-    "kostenfreie ersteinschätzung",
-    "kostenlose ersteinschätzung",
-    "rechtliche hilfe",
-    "juristische hilfe",
-    "ansprüche",
-    "anspruchsgegner",
-    "kanzlei",
-)
-
-NEWS_MARKERS = (
-    "nachrichten",
-    "news",
-    "колл-цент",
-    "жертва может",
-    "объясняет",
-    "сообщает",
-)
-
 
 @dataclass(frozen=True)
 class CandidateClass:
@@ -78,16 +55,14 @@ def _host(url: str | None) -> str:
 
 
 def source_kind(url: str | None, text: str = "") -> str:
+    """Classify an external Google Alert result by its URL, not its keywords."""
     host = _host(url)
     path = urlparse(url).path.lower() if url else ""
-    lowered = text.lower()
 
-    if host in LEGAL_HOSTS or "/rechtstipps/" in path or "anwalt.de" in host or "anwalt24.de" in host:
+    if host in LEGAL_HOSTS or "anwalt.de" in host or "anwalt24.de" in host or "/rechtstipps/" in path:
         return "legal"
-    if host in NEWS_HOSTS or any(marker in lowered for marker in NEWS_MARKERS):
+    if host in NEWS_HOSTS:
         return "news"
-    if any(marker in lowered for marker in LEGAL_MARKERS):
-        return "legal"
     if any(marker in path for marker in ("/news/", "/article/", "/reviews", "/review/", "/otzyv", "/otzyvy")):
         return "article"
     return "public"
@@ -100,7 +75,7 @@ PERSONAL_VICTIM_PATTERNS = (
     # Russian
     r"\bя\s+(?:потерял|потеряла)\b",
     r"\bя\s+(?:вложил|вложила|инвестировал|инвестировала)\b",
-    r"\bя\s+(?:перевел|перевела|отправил|отправила)\b.{0,100}\b(?:деньги|средства|депозит|евро|доллар)",
+    r"\bя\s+(?:перевел|перевела|отправил|отправила)\b.{0,100}\b(?:деньги|средства|депозит|евро|доллар)\b",
     r"\bменя\s+(?:обманули|развели|кинули|обокрали)\b",
     r"\bу\s+меня\s+(?:украли|заблокировали|пропали)\b",
     r"\bу\s+меня\s+(?:не\s+выводят|заблокирован\s+вывод|заблокировали\s+вывод)\b",

@@ -12,9 +12,8 @@ NEWS_HOSTS = {
     "kommersant.ru", "lenta.ru", "gazeta.ru", "interfax.ru", "forbes.ru", "focus.de",
     "spiegel.de", "faz.net", "welt.de", "bild.de",
 }
-# Only explicit user-generated discussion/Q&A hosts may produce Gmail leads.
 USER_GENERATED_HOSTS = {
-    "banki.ru", "stackoverflow.com", "quora.com", "gutefrage.net", "reddit.com", "pikabu.ru",
+    "quora.com", "gutefrage.net", "reddit.com", "pikabu.ru",
 }
 
 @dataclass(frozen=True)
@@ -38,6 +37,8 @@ def source_kind(url: str | None, text: str = "") -> str:
         return "legal"
     if host in NEWS_HOSTS:
         return "news"
+    if host == "banki.ru" and path.startswith("/forum/"):
+        return "user_generated"
     if host in USER_GENERATED_HOSTS:
         return "user_generated"
     if any(marker in path for marker in ("/news/", "/article/", "/reviews", "/review/", "/otzyv", "/otzyvy")):
@@ -81,11 +82,8 @@ def classify(text: str, url: str | None = None, source: str = "public") -> Candi
 
     if kind in {"legal", "news", "article"}:
         return CandidateClass("intelligence", kind, direct, (f"non-user source: {kind}",))
-
     if kind == "unknown":
         return CandidateClass("ignore", kind, direct, ("source is not an approved user-generated channel",))
-
     if not direct:
         return CandidateClass("ignore", kind, False, ("no direct first-person victim signal",))
-
     return CandidateClass("lead", kind, True, ("direct first-person victim signal from user-generated source",))

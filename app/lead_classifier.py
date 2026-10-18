@@ -4,44 +4,21 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-
-# Google Alerts frequently surfaces legal SEO pages and news articles that contain
-# exactly the same words as a real victim. Source classification MUST happen
-# before lead scoring.
 LEGAL_HOSTS = {
-    "anwalt.de",
-    "anwalt24.de",
-    "broker-betrug.de",
-    "kryptoschaden.de",
-    "betrugsopfer-hilfe.de",
+    "anwalt.de", "anwalt24.de", "broker-betrug.de", "kryptoschaden.de", "betrugsopfer-hilfe.de",
 }
-
 NEWS_HOSTS = {
-    "dw.com",
-    "amp.dw.com",
-    "postimees.ee",
-    "rus.postimees.ee",
-    "tass.ru",
-    "ria.ru",
-    "rbc.ru",
-    "kommersant.ru",
-    "lenta.ru",
-    "gazeta.ru",
-    "interfax.ru",
-    "forbes.ru",
-    "focus.de",
-    "spiegel.de",
-    "faz.net",
-    "welt.de",
-    "bild.de",
+    "dw.com", "amp.dw.com", "postimees.ee", "rus.postimees.ee", "tass.ru", "ria.ru", "rbc.ru",
+    "kommersant.ru", "lenta.ru", "gazeta.ru", "interfax.ru", "forbes.ru", "focus.de",
+    "spiegel.de", "faz.net", "welt.de", "bild.de",
 }
-
+# Only explicit user-generated discussion/Q&A hosts may produce Gmail leads.
+USER_GENERATED_HOSTS = {
+    "banki.ru", "stackoverflow.com", "quora.com", "gutefrage.net", "reddit.com", "pikabu.ru",
+}
 
 @dataclass(frozen=True)
 class CandidateClass:
-    # lead: eligible for normal lead scoring
-    # intelligence: useful scam/news/legal information, but not a client lead
-    # ignore: no reliable victim intent
     kind: str
     source_kind: str
     direct_victim: bool
@@ -55,24 +32,20 @@ def _host(url: str | None) -> str:
 
 
 def source_kind(url: str | None, text: str = "") -> str:
-    """Classify an external Google Alert result by its URL, not its keywords."""
     host = _host(url)
     path = urlparse(url).path.lower() if url else ""
-
     if host in LEGAL_HOSTS or "anwalt.de" in host or "anwalt24.de" in host or "/rechtstipps/" in path:
         return "legal"
     if host in NEWS_HOSTS:
         return "news"
+    if host in USER_GENERATED_HOSTS:
+        return "user_generated"
     if any(marker in path for marker in ("/news/", "/article/", "/reviews", "/review/", "/otzyv", "/otzyvy")):
         return "article"
-    return "public"
+    return "unknown"
 
 
-# These patterns are intentionally about the speaker's own experience.
-# Generic phrases such as "victims lost money" or "people want their money back"
-# do NOT qualify.
 PERSONAL_VICTIM_PATTERNS = (
-    # Russian
     r"\bя\s+(?:потерял|потеряла)\b",
     r"\bя\s+(?:вложил|вложила|инвестировал|инвестировала)\b",
     r"\bя\s+(?:перевел|перевела|отправил|отправила)\b.{0,100}\b(?:деньги|средства|депозит|евро|доллар)\b",
@@ -82,7 +55,6 @@ PERSONAL_VICTIM_PATTERNS = (
     r"\bя\s+не\s+могу\s+вывести\b",
     r"\bмне\s+не\s+(?:дают|могут)\s+вывести\b",
     r"\bпомогите\s+(?:вернуть|забрать)\s+(?:мои\s+)?(?:деньги|средства)\b",
-    # German
     r"\bich\s+(?:habe|hatte)\b.{0,100}\b(?:verloren|investiert|bezahlt|überwiesen)\b",
     r"\bich\s+wurde\s+(?:betrogen|abgezockt)\b",
     r"\bich\s+(?:habe|kann)\b.{0,100}\b(?:mein|meine)\s+(?:geld|auszahlung)\b",
@@ -90,7 +62,6 @@ PERSONAL_VICTIM_PATTERNS = (
     r"\bich\s+kann\s+(?:mein\s+)?geld\s+nicht\s+(?:auszahlen|abheben)\b",
     r"\bich\s+bekomme\s+mein\s+geld\s+nicht\s+zur[üu]ck\b",
     r"\bich\s+brauche\s+(?:hilfe|einen\s+anwalt|rechtliche\s+hilfe)\b",
-    # English
     r"\bi\s+(?:lost|have\s+lost)\s+(?:my\s+)?(?:money|funds|savings)\b",
     r"\bi\s+(?:invested|transferred|sent)\b.{0,100}\b(?:money|funds|deposit)\b",
     r"\bi\s+was\s+(?:scammed|defrauded)\b",
@@ -105,28 +76,16 @@ def has_direct_victim_language(text: str) -> bool:
 
 
 def classify(text: str, url: str | None = None, source: str = "public") -> CandidateClass:
-    kind = source_kind(url, text) if source == "gmail:google-alerts" or url else source
+    kind = source_kind(url, text) if source == "gmail:google-alerts" else source
     direct = has_direct_victim_language(text)
 
     if kind in {"legal", "news", "article"}:
-        return CandidateClass(
-            kind="intelligence",
-            source_kind=kind,
-            direct_victim=direct,
-            reasons=(f"non-lead source: {kind}",),
-        )
+        return CandidateClass("intelligence", kind, direct, (f"non-user source: {kind}",))
+
+    if kind == "unknown":
+        return CandidateClass("ignore", kind, direct, ("source is not an approved user-generated channel",))
 
     if not direct:
-        return CandidateClass(
-            kind="ignore",
-            source_kind=kind,
-            direct_victim=False,
-            reasons=("no direct first-person victim signal",),
-        )
+        return CandidateClass("ignore", kind, False, ("no direct first-person victim signal",))
 
-    return CandidateClass(
-        kind="lead",
-        source_kind=kind,
-        direct_victim=True,
-        reasons=("direct first-person victim signal",),
-    )
+    return CandidateClass("lead", kind, True, ("direct first-person victim signal from user-generated source",))

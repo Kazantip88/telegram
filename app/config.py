@@ -45,6 +45,9 @@ class Settings:
     rss_max_items: int
     rss_timeout_seconds: int
     rss_request_delay_seconds: float
+    facebook_enabled: bool
+    facebook_queries: tuple[str, ...]
+    facebook_max_items: int
 
 
 def load_settings(require_telegram: bool = True) -> Settings:
@@ -58,6 +61,7 @@ def load_settings(require_telegram: bool = True) -> Settings:
         raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
 
     rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
+    facebook_queries = tuple(s.strip() for s in os.getenv("FACEBOOK_QUERIES", "").split("|") if s.strip())
 
     db_path = Path(os.getenv("DB_PATH", "data/leads.sqlite3"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,4 +94,7 @@ def load_settings(require_telegram: bool = True) -> Settings:
         rss_max_items=max(1, int(os.getenv("RSS_MAX_ITEMS", "50"))),
         rss_timeout_seconds=max(5, int(os.getenv("RSS_TIMEOUT_SECONDS", "20"))),
         rss_request_delay_seconds=max(0.0, float(os.getenv("RSS_REQUEST_DELAY_SECONDS", "2"))),
+        facebook_enabled=_bool("FACEBOOK_ENABLED", True),
+        facebook_queries=facebook_queries,
+        facebook_max_items=max(1, int(os.getenv("FACEBOOK_MAX_ITEMS", "50"))),
     )

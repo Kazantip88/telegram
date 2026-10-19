@@ -6,7 +6,7 @@ from .telegram_client import run
 
 
 def main() -> None:
-    settings = load_settings()
+    settings = load_settings(require_telegram=False)
     asyncio.run(init_db(settings.db_path))
     asyncio.run(run(settings))
 

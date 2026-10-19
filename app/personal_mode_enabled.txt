@@ -1,0 +1,1 @@
+TG personal-message mode: channel posts, forwarded messages and bot-generated messages must be skipped before lead scoring.

@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 
-from .db import fingerprint, save_lead
+from .config import load_settings
+from .db import fingerprint, init_db, save_lead
 from .detector import detect
 from .discussion_filter import inspect_discussion
 from .emailer import build_message, send_message
@@ -209,3 +210,32 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
         hot=hot,
         normal=normal,
     )
+
+
+async def main() -> None:
+    settings = load_settings()
+    await init_db(settings.db_path)
+    client = TelegramClient(
+        settings.tg_session,
+        settings.tg_api_id,
+        settings.tg_api_hash,
+        sequential_updates=True,
+    )
+    await client.start()
+    try:
+        print(f"Telegram one-cycle search: {len(settings.tg_sources)} source(s)")
+        stats = await search_once(client, settings)
+        print(
+            "Telegram cycle: "
+            f"sources={stats.sources} messages={stats.messages} "
+            f"comments={stats.comments_checked} qualified={stats.qualified} "
+            f"hot={stats.hot} normal={stats.normal}"
+        )
+    except FloodWaitError as exc:
+        print(f"Telegram FLOOD_WAIT received ({exc.seconds}s). Stopping safely.")
+    finally:
+        await client.disconnect()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

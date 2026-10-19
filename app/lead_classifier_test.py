@@ -23,6 +23,15 @@ class LeadClassifierTests(unittest.TestCase):
         self.assertEqual(result.kind, "intelligence")
         self.assertEqual(result.source_kind, "news")
 
+    def test_bankstoday_article_with_first_person_quote_is_not_lead(self):
+        result = classify(
+            "Я уже потерял деньги на подобных схемах, говорится в статье.",
+            "https://bankstoday.net/rejting-brokerov/zalarium-com-obzor",
+            source="gmail:google-alerts",
+        )
+        self.assertEqual(result.kind, "ignore")
+        self.assertEqual(result.source_kind, "unknown")
+
     def test_legal_anwalt_page_is_not_lead(self):
         result = classify(
             "Wer bereits Geld verloren hat, kann sein Geld zurückfordern. Kostenfreie Ersteinschätzung.",
@@ -53,18 +62,28 @@ class LeadClassifierTests(unittest.TestCase):
         result = classify("Ich habe 12000 Euro verloren und kann mein Geld nicht auszahlen", source="telegram")
         self.assertEqual(result.kind, "lead")
 
-    def test_qna_url_remains_public(self):
+    def test_qna_url_is_lead_when_personal(self):
         result = classify(
             "Ich habe 8000 Euro bei einem Broker verloren. Was kann ich tun?",
             "https://www.banki.ru/forum/topic/example",
             source="gmail:google-alerts",
         )
         self.assertEqual(result.kind, "lead")
-        self.assertEqual(result.source_kind, "public")
+        self.assertEqual(result.source_kind, "user_generated")
 
-    def test_repeated_alert_destination_is_stable_source(self):
+    def test_unknown_external_site_is_not_a_lead(self):
+        result = classify(
+            "I lost 10000 euros to a broker and need help.",
+            "https://example.com/story",
+            source="gmail:google-alerts",
+        )
+        self.assertEqual(result.kind, "ignore")
+        self.assertEqual(result.source_kind, "unknown")
+
+    def test_repeated_alert_destination_source_types(self):
         self.assertEqual(source_kind("https://www.anwalt.de/rechtstipps/example"), "legal")
         self.assertEqual(source_kind("https://rus.postimees.ee/8566334/example"), "news")
+        self.assertEqual(source_kind("https://www.banki.ru/forum/topic/example"), "user_generated")
 
 
 if __name__ == "__main__":

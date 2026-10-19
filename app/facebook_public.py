@@ -116,7 +116,6 @@ def _fetch(url: str, timeout: int) -> bytes:
 
 
 def _query_url(query: str) -> str:
-    # Google News RSS is used only as an index of publicly accessible pages.
     country = _country(query)
     gl = country if country in {"DE", "AT", "CH", "BE", "NL"} else "LU"
     q = query.replace(f"[{country}]", "").strip()
@@ -146,13 +145,14 @@ async def collect_once(settings) -> FacebookStats:
                 if result.total < settings.min_email_score:
                     continue
 
-                profile_id = _public_profile_id(item.get("link", ""))
                 source_url = item.get("link") or _query_url(query)
+                profile_id = _public_profile_id(source_url)
+                public_name = item.get("author") or None
                 reasons = list(result.reasons)
                 reasons.append(f"source_url={source_url}")
                 reasons.append(f"facebook_target_country={_country(query)}")
-                if item.get("author"):
-                    reasons.append(f"public_name={item['author']}")
+                if public_name:
+                    reasons.append(f"public_name={public_name}")
                 if profile_id:
                     reasons.append(f"public_facebook_id={profile_id}")
 
@@ -161,7 +161,10 @@ async def collect_once(settings) -> FacebookStats:
                     "telegram_message_id": None,
                     "source": "facebook:public",
                     "sender_id": profile_id,
-                    "username": item.get("author") or None,
+                    "public_id": profile_id,
+                    "public_name": public_name,
+                    "username": public_name,
+                    "source_url": source_url,
                     "language": signals.language,
                     "amount": max(signals.amounts) if signals.amounts else None,
                     "score": result.total,

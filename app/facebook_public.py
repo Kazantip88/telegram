@@ -24,21 +24,34 @@ class FacebookStats:
     normal: int = 0
 
 
+# Deliberately narrow: a Facebook result must look like a real person's own
+# experience, not a broker review, warning, advertisement or legal article.
 _PERSONAL = (
-    r"\bich\s+(?:habe|hatte)\s+(?:mein(?:e|en)?\s+)?(?:geld|ersparnisse|mittel)\s+(?:verloren|investiert|überwiesen|bezahlt)\b",
-    r"\bich\s+wurde\s+betrogen\b",
-    r"\bich\s+kann\s+mein\s+geld\s+nicht\s+(?:auszahlen|abheben)\b",
+    r"\bich\s+(?:habe|hatte)\b.{0,140}\b(?:geld|ersparnisse|euro|€|investition|investment|einzahlung|depot)\b.{0,100}\b(?:verloren|weg|nicht\s+zurück|nicht\s+auszahlen|nicht\s+abheben|investiert|überwiesen|bezahlt)\b",
+    r"\bich\s+wurde\s+(?:betrogen|abgezockt|getäuscht)\b",
+    r"\bmir\s+wurde\b.{0,100}\b(?:geld|auszahlung|konto)\b",
+    r"\bich\s+kann\s+mein\s+geld\s+nicht\s+(?:auszahlen|abheben|zurückbekommen)\b",
     r"\bich\s+bekomme\s+mein\s+geld\s+nicht\s+zurück\b",
-    r"\bich\s+brauche\s+(?:hilfe|einen\s+anwalt|rechtliche\s+hilfe)\b",
+    r"\bich\s+brauche\s+(?:hilfe|einen\s+anwalt|rechtliche\s+hilfe)\b.{0,100}\b(?:broker|geld|invest|krypto|trading)\b",
+)
+
+# Reject common SEO/legal/news pages even when they quote a victim.
+_BLOCKED_HOSTS = {
+    "anwalt.de", "anwalt24.de", "broker-betrug.de", "kryptoschaden.de",
+    "betrugsopfer-hilfe.de", "telltrue.net", "fxidea.com",
+}
+_BLOCKED_PATH_MARKERS = (
+    "/ratgeber/", "/rechtstipps/", "/magazin/", "/news/", "/article/",
+    "/reviews", "/review/", "/otzyv", "/otzyvy", "/warnung/",
 )
 
 _COUNTRY_HINTS = {
-    "DE": ("Deutschland", "Germany"),
-    "AT": ("Österreich", "Austria"),
-    "CH": ("Schweiz", "Switzerland"),
-    "LU": ("Luxemburg", "Luxembourg"),
-    "BE": ("Belgien", "Belgium"),
-    "NL": ("Niederlande", "Netherlands"),
+    "DE": ("Deutschland", "Germany", "deutschland", "deutsch"),
+    "AT": ("Österreich", "Austria", "österreich"),
+    "CH": ("Schweiz", "Switzerland", "schweiz"),
+    "LU": ("Luxemburg", "Luxembourg", "luxemburg"),
+    "BE": ("Belgien", "Belgium", "belgien"),
+    "NL": ("Niederlande", "Netherlands", "niederlande"),
 }
 
 
@@ -80,19 +93,18 @@ def _items(payload: bytes) -> list[dict[str, str]]:
 
 def _is_facebook(url: str) -> bool:
     host = urllib.parse.urlparse(url).netloc.lower().removeprefix("www.")
-    return host in {"facebook.com", "m.facebook.com"} or host.endswith(".facebook.com")
+    return host == "facebook.com" or host.endswith(".facebook.com")
+
+
+def _blocked_source(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc.lower().removeprefix("www.")
+    return host in _BLOCKED_HOSTS or any(marker in parsed.path.lower() for marker in _BLOCKED_PATH_MARKERS)
 
 
 def _personal(text: str) -> bool:
     lowered = text.lower()
-    return any(re.search(pattern, lowered) for pattern in _PERSONAL)
-
-
-def _public_profile_id(url: str) -> str | None:
-    parsed = urllib.parse.urlparse(url)
-    params = urllib.parse.parse_qs(parsed.query)
-    value = params.get("id", [""])[0]
-    return value if value.isdigit() else None
+    return any(re.search(pattern, lowered, flags=re.I | re.S) for pattern in _PERSONAL)
 
 
 def _country(query: str) -> str:
@@ -119,7 +131,12 @@ def _query_url(query: str) -> str:
     country = _country(query)
     gl = country if country in {"DE", "AT", "CH", "BE", "NL"} else "LU"
     q = query.replace(f"[{country}]", "").strip()
-    params = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "hl": "de", "gl": gl, "ceid": f"{gl}:de"})
+    params = urllib.parse.urlencode({
+        "q": f"site:facebook.com ({q})",
+        "hl": "de",
+        "gl": gl,
+        "ceid": f"{gl}:de",
+    })
     return f"https://news.google.com/rss/search?{params}"
 
 
@@ -134,42 +151,39 @@ async def collect_once(settings) -> FacebookStats:
             items = _items(payload)[: settings.facebook_max_items]
             stats = FacebookStats(stats.queries, stats.items + len(items), stats.personal, stats.qualified, stats.hot, stats.normal)
             for item in items:
-                if not _is_facebook(item.get("link", "")):
+                source_url = item.get("link", "")
+                if not _is_facebook(source_url) or _blocked_source(source_url):
                     continue
                 text = " — ".join(x for x in (item.get("title"), item.get("summary")) if x).strip()
                 if not _personal(text):
                     continue
                 stats = FacebookStats(stats.queries, stats.items, stats.personal + 1, stats.qualified, stats.hot, stats.normal)
+
                 signals = detect(text)
                 result = score_lead(signals)
                 if result.total < settings.min_email_score:
                     continue
 
-                source_url = item.get("link") or _query_url(query)
-                profile_id = _public_profile_id(source_url)
-                public_name = item.get("author") or None
                 reasons = list(result.reasons)
                 reasons.append(f"source_url={source_url}")
                 reasons.append(f"facebook_target_country={_country(query)}")
-                if public_name:
-                    reasons.append(f"public_name={public_name}")
-                if profile_id:
-                    reasons.append(f"public_facebook_id={profile_id}")
+                if item.get("author"):
+                    reasons.append(f"public_author={item['author']}")
 
                 lead = {
                     "fingerprint": fingerprint("facebook:public", source_url, text),
                     "telegram_message_id": None,
                     "source": "facebook:public",
-                    "sender_id": profile_id,
-                    "public_id": profile_id,
-                    "public_name": public_name,
-                    "username": public_name,
+                    "sender_id": None,
+                    "public_id": None,
+                    "public_name": item.get("author") or None,
+                    "username": item.get("author") or None,
                     "source_url": source_url,
                     "language": signals.language,
                     "amount": max(signals.amounts) if signals.amounts else None,
                     "score": result.total,
                     "priority": result.priority,
-                    "category": "CRYPTO" if any(x in text.lower() for x in ("krypto", "bitcoin")) else "INVESTMENT_SCAM",
+                    "category": "CRYPTO" if any(x in text.lower() for x in ("krypto", "bitcoin", "btc")) else "INVESTMENT_SCAM",
                     "message": text,
                     "reasons": reasons,
                 }

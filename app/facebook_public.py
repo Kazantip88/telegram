@@ -8,6 +8,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
+from .config import load_settings
 from .db import fingerprint, save_lead
 from .detector import detect
 from .emailer import build_message, send_message
@@ -198,3 +199,17 @@ async def collect_once(settings) -> FacebookStats:
             print(f"Facebook public search failed for {query!r}: {exc}")
 
     return stats
+
+
+async def main() -> None:
+    settings = load_settings(require_telegram=False)
+    stats = await collect_once(settings)
+    print(
+        "Facebook public test: "
+        f"queries={stats.queries} items={stats.items} personal={stats.personal} "
+        f"qualified={stats.qualified} hot={stats.hot} normal={stats.normal}"
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

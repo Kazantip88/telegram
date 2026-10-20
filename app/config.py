@@ -16,6 +16,24 @@ def _bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+_DEFAULT_FACEBOOK_QUERIES = (
+    "[DE] \"ich habe Geld verloren\" Broker",
+    "[DE] \"ich wurde betrogen\" Broker",
+    "[DE] \"Geld nicht auszahlen\" Broker",
+    "[DE] \"Auszahlung blockiert\" Broker",
+    "[AT] \"ich habe Geld verloren\" Broker",
+    "[AT] \"ich wurde betrogen\" Broker",
+    "[CH] \"ich habe Geld verloren\" Broker",
+    "[CH] \"ich wurde betrogen\" Broker",
+    "[LU] \"ich habe Geld verloren\" Broker",
+    "[BE] \"ich habe Geld verloren\" Broker",
+    "[NL] \"ich habe Geld verloren\" Broker",
+    "[NL] \"ich wurde betrogen\" Broker",
+    "[DE] \"mein Geld\" \"kann nicht\" auszahlen Krypto",
+    "[DE] \"ich brauche\" Anwalt Broker Betrug",
+)
+
+
 @dataclass(frozen=True)
 class Settings:
     tg_api_id: int
@@ -61,7 +79,8 @@ def load_settings(require_telegram: bool = True) -> Settings:
         raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
 
     rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
-    facebook_queries = tuple(s.strip() for s in os.getenv("FACEBOOK_QUERIES", "").split("|") if s.strip())
+    facebook_queries_env = tuple(s.strip() for s in os.getenv("FACEBOOK_QUERIES", "").split("|") if s.strip())
+    facebook_queries = facebook_queries_env or _DEFAULT_FACEBOOK_QUERIES
 
     db_path = Path(os.getenv("DB_PATH", "data/leads.sqlite3"))
     db_path.parent.mkdir(parents=True, exist_ok=True)

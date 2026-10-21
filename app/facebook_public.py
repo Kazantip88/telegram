@@ -135,7 +135,7 @@ def _fetch(url: str, timeout: int) -> bytes:
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "LawLegal-Public-Lead-Monitor/1.0 (read-only public search)",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/131 Safari/537.36",
             "Accept": "text/html, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.5",
         },
     )
@@ -157,43 +157,77 @@ def _query_urls(query: str) -> list[str]:
     bing_params = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "format": "rss", "setlang": "de"})
     urls.append(f"https://www.bing.com/news/search?{bing_params}")
 
-    # News indexes are poor at returning the actual Facebook post URL. Add
-    # normal public web-search pages as discovery sources. We only extract
-    # explicit facebook.com links and still require a direct post URL below.
-    google_web = urllib.parse.urlencode({"q": base, "hl": "de", "gl": gl, "num": "20"})
-    urls.append(f"https://www.google.com/search?{google_web}")
+    # Do not hammer Google web search: it quickly returns HTTP 429 from a
+    # local script. DuckDuckGo HTML is used only as a discovery source.
+    ddg_params = urllib.parse.urlencode({"q": base, "kl": f"{gl}-de"})
+    urls.append(f"https://html.duckduckgo.com/html/?{ddg_params}")
+
     bing_web = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "setlang": "de"})
     urls.append(f"https://www.bing.com/search?{bing_web}")
     return urls
 
 
+def _extract_author(text: str) -> str:
+    text = _clean(text)
+    patterns = (
+        r"^(.{2,80}?)\s*[|–—-]\s*Facebook(?:\s*$|\s*[|–—-])",
+        r"^(.{2,80}?)\s*[|–—-]\s*Facebook\s*\w*",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            candidate = _clean(match.group(1))
+            if candidate and not candidate.lower().startswith(("www.", "http")):
+                return candidate
+    return ""
+
+
 def _search_links(payload: bytes) -> list[dict[str, str]]:
-    """Extract public Facebook result links from normal search HTML."""
+    """Extract direct public Facebook links plus visible search-result text."""
     text = payload.decode("utf-8", errors="ignore")
     text = html.unescape(text)
-    candidates: list[str] = []
-    # Google/Bing both expose result hrefs in HTML, though their surrounding
-    # markup changes frequently. Decode redirect URLs before filtering.
-    for raw in re.findall(r'href=["\']([^"\']+)["\']', text, flags=re.I):
+    result: list[dict[str, str]] = []
+
+    # DuckDuckGo exposes result anchors with class=result__a and nearby result
+    # snippets. Keep the surrounding visible text so the personal-language
+    # filter can work even when Facebook itself is login-gated.
+    ddg_matches = re.findall(
+        r'<a[^>]+class=["\'][^"\']*result__a[^"\']*["\'][^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>(.*?)(?=<div[^>]+class=["\'][^"\']*result|$)',
+        text,
+        flags=re.I | re.S,
+    )
+    for raw, title_html, tail in ddg_matches:
+        candidate = urllib.parse.unquote(raw)
+        parsed = urllib.parse.urlparse(candidate)
+        if parsed.netloc.lower().endswith("duckduckgo.com") and "uddg" in urllib.parse.parse_qs(parsed.query):
+            candidate = urllib.parse.parse_qs(parsed.query).get("uddg", [""])[0]
+        if _is_facebook(candidate) and _direct_post(candidate):
+            title = _clean(title_html)
+            summary = _clean(tail)[:1200]
+            result.append({"title": title, "summary": summary, "author": _extract_author(title), "link": candidate})
+
+    # Bing fallback: extract direct Facebook hrefs and nearby anchor text.
+    for match in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', text, flags=re.I | re.S):
+        raw, title_html = match.groups()
         candidate = html.unescape(raw)
         if candidate.startswith("/url?q="):
             candidate = urllib.parse.parse_qs(urllib.parse.urlparse(candidate).query).get("q", [""])[0]
         elif candidate.startswith("/url?url="):
             candidate = urllib.parse.parse_qs(urllib.parse.urlparse(candidate).query).get("url", [""])[0]
-        elif candidate.startswith("/"):
-            continue
         if _is_facebook(candidate) and _direct_post(candidate):
-            candidates.append(candidate)
+            title = _clean(title_html)
+            result.append({"title": title, "summary": title, "author": _extract_author(title), "link": candidate})
 
     seen: set[str] = set()
-    result: list[dict[str, str]] = []
-    for link in candidates:
-        normalized = link.split("#", 1)[0]
+    unique: list[dict[str, str]] = []
+    for item in result:
+        normalized = item["link"].split("#", 1)[0]
         if normalized in seen:
             continue
         seen.add(normalized)
-        result.append({"title": "", "summary": "", "author": "", "link": normalized})
-    return result
+        item["link"] = normalized
+        unique.append(item)
+    return unique
 
 
 async def collect_once(settings) -> FacebookStats:
@@ -206,7 +240,7 @@ async def collect_once(settings) -> FacebookStats:
         for query_url in _query_urls(query):
             try:
                 payload = await asyncio.to_thread(_fetch, query_url, settings.rss_timeout_seconds)
-                if "google.com/search" in query_url or "bing.com/search" in query_url:
+                if "duckduckgo.com/html" in query_url or "bing.com/search" in query_url:
                     items = _search_links(payload)
                 else:
                     items = _items(payload)[: settings.facebook_max_items]
@@ -229,9 +263,6 @@ async def collect_once(settings) -> FacebookStats:
                     )
 
                     public_author = item.get("author", "").strip()
-                    # Search engines often omit the Facebook author. For those
-                    # results keep the post URL for a later manual review, but
-                    # never turn an author-less hit into an emailed lead.
                     if not public_author:
                         continue
                     stats = FacebookStats(

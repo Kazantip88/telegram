@@ -24,6 +24,7 @@ class FacebookStats:
     direct_posts: int = 0
     personal: int = 0
     qualified: int = 0
+    duplicates: int = 0
     hot: int = 0
     normal: int = 0
 
@@ -156,8 +157,6 @@ def _query_urls(query: str) -> list[str]:
     urls = [f"https://news.google.com/rss/search?{params}"]
     bing_params = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "format": "rss", "setlang": "de"})
     urls.append(f"https://www.bing.com/news/search?{bing_params}")
-    ddg_params = urllib.parse.urlencode({"q": base, "kl": f"{gl}-de"})
-    urls.append(f"https://html.duckduckgo.com/html/?{ddg_params}")
     bing_web = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "setlang": "de"})
     urls.append(f"https://www.bing.com/search?{bing_web}")
     return urls
@@ -232,14 +231,14 @@ async def collect_once(settings) -> FacebookStats:
         for query_url in _query_urls(query):
             try:
                 payload = await asyncio.to_thread(_fetch, query_url, settings.rss_timeout_seconds)
-                if "duckduckgo.com/html" in query_url or "bing.com/search" in query_url:
+                if "bing.com/search" in query_url:
                     items = _search_links(payload)
                 else:
                     items = _items(payload)[: settings.facebook_max_items]
                 stats = FacebookStats(
                     stats.queries, stats.items + len(items), stats.facebook,
                     stats.author, stats.direct_posts, stats.personal,
-                    stats.qualified, stats.hot, stats.normal,
+                    stats.qualified, stats.duplicates, stats.hot, stats.normal,
                 )
                 for item in items:
                     source_url = item.get("link", "")
@@ -251,7 +250,7 @@ async def collect_once(settings) -> FacebookStats:
                     stats = FacebookStats(
                         stats.queries, stats.items, stats.facebook + 1,
                         stats.author, stats.direct_posts, stats.personal,
-                        stats.qualified, stats.hot, stats.normal,
+                        stats.qualified, stats.duplicates, stats.hot, stats.normal,
                     )
 
                     public_author = item.get("author", "").strip()
@@ -311,13 +310,24 @@ async def collect_once(settings) -> FacebookStats:
                         "message": text,
                         "reasons": reasons,
                     }
-                    if not await save_lead(settings.db_path, lead):
+                    saved = await save_lead(settings.db_path, lead)
+                    print(
+                        "Facebook personal candidate: "
+                        f"author={public_author!r} score={result.total} priority={result.priority} "
+                        f"duplicate={'no' if saved else 'yes'} url={source_url}"
+                    )
+                    if not saved:
+                        stats = FacebookStats(
+                            stats.queries, stats.items, stats.facebook, stats.author,
+                            stats.direct_posts, stats.personal, stats.qualified,
+                            stats.duplicates + 1, stats.hot, stats.normal,
+                        )
                         continue
                     await send_message(settings, build_message(settings, lead))
                     if result.priority == "HOT":
-                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.hot + 1, stats.normal)
+                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.duplicates, stats.hot + 1, stats.normal)
                     else:
-                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.hot, stats.normal + 1)
+                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.duplicates, stats.hot, stats.normal + 1)
             except Exception as exc:
                 print(f"Facebook public search failed for {query_url!r}: {exc}")
 
@@ -331,7 +341,7 @@ async def main() -> None:
         "Facebook public test: "
         f"queries={stats.queries} items={stats.items} facebook={stats.facebook} "
         f"author={stats.author} direct_posts={stats.direct_posts} personal={stats.personal} "
-        f"qualified={stats.qualified} hot={stats.hot} normal={stats.normal}"
+        f"qualified={stats.qualified} duplicates={stats.duplicates} hot={stats.hot} normal={stats.normal}"
     )
 
 

@@ -156,12 +156,8 @@ def _query_urls(query: str) -> list[str]:
     urls = [f"https://news.google.com/rss/search?{params}"]
     bing_params = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "format": "rss", "setlang": "de"})
     urls.append(f"https://www.bing.com/news/search?{bing_params}")
-
-    # Do not hammer Google web search: it quickly returns HTTP 429 from a
-    # local script. DuckDuckGo HTML is used only as a discovery source.
     ddg_params = urllib.parse.urlencode({"q": base, "kl": f"{gl}-de"})
     urls.append(f"https://html.duckduckgo.com/html/?{ddg_params}")
-
     bing_web = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "setlang": "de"})
     urls.append(f"https://www.bing.com/search?{bing_web}")
     return urls
@@ -188,9 +184,6 @@ def _search_links(payload: bytes) -> list[dict[str, str]]:
     text = html.unescape(text)
     result: list[dict[str, str]] = []
 
-    # DuckDuckGo exposes result anchors with class=result__a and nearby result
-    # snippets. Keep the surrounding visible text so the personal-language
-    # filter can work even when Facebook itself is login-gated.
     ddg_matches = re.findall(
         r'<a[^>]+class=["\'][^"\']*result__a[^"\']*["\'][^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>(.*?)(?=<div[^>]+class=["\'][^"\']*result|$)',
         text,
@@ -206,7 +199,6 @@ def _search_links(payload: bytes) -> list[dict[str, str]]:
             summary = _clean(tail)[:1200]
             result.append({"title": title, "summary": summary, "author": _extract_author(title), "link": candidate})
 
-    # Bing fallback: extract direct Facebook hrefs and nearby anchor text.
     for match in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', text, flags=re.I | re.S):
         raw, title_html = match.groups()
         candidate = html.unescape(raw)
@@ -290,8 +282,12 @@ async def collect_once(settings) -> FacebookStats:
 
                     signals = detect(text)
                     result = score_lead(signals)
+                    # A direct public Facebook post that explicitly describes
+                    # personal victimization is already a lead candidate. Do
+                    # not require an amount/help/evidence signal before the
+                    # lawyer sees it; keep the normal score for prioritization.
                     if result.total < settings.min_email_score:
-                        continue
+                        result = type(result)(50, "NORMAL", result.reasons + ("explicit personal Facebook victim post",))
 
                     reasons = list(result.reasons)
                     reasons.append(f"source_url={source_url}")

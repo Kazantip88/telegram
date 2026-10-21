@@ -259,7 +259,7 @@ async def collect_once(settings) -> FacebookStats:
                     stats = FacebookStats(
                         stats.queries, stats.items, stats.facebook,
                         stats.author + 1, stats.direct_posts, stats.personal,
-                        stats.qualified, stats.hot, stats.normal,
+                        stats.qualified, stats.duplicates, stats.hot, stats.normal,
                     )
 
                     if not _direct_post(source_url):
@@ -267,7 +267,7 @@ async def collect_once(settings) -> FacebookStats:
                     stats = FacebookStats(
                         stats.queries, stats.items, stats.facebook,
                         stats.author, stats.direct_posts + 1, stats.personal,
-                        stats.qualified, stats.hot, stats.normal,
+                        stats.qualified, stats.duplicates, stats.hot, stats.normal,
                     )
 
                     text = " — ".join(x for x in (item.get("title"), item.get("summary")) if x).strip()
@@ -276,7 +276,7 @@ async def collect_once(settings) -> FacebookStats:
                     stats = FacebookStats(
                         stats.queries, stats.items, stats.facebook,
                         stats.author, stats.direct_posts, stats.personal + 1,
-                        stats.qualified, stats.hot, stats.normal,
+                        stats.qualified, stats.duplicates, stats.hot, stats.normal,
                     )
 
                     signals = detect(text)

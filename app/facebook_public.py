@@ -48,8 +48,6 @@ _BLOCKED_PATH_MARKERS = (
     "/blog/", "/presse/", "/press/",
 )
 
-# Facebook URLs that can represent an actual public post. A group URL is
-# accepted only when it contains a post/permalink/share marker, not a landing page.
 _DIRECT_FACEBOOK_MARKERS = (
     "/posts/", "/permalink/", "/story.php", "/photo.php", "/share/p/",
 )
@@ -138,7 +136,7 @@ def _fetch(url: str, timeout: int) -> bytes:
         url,
         headers={
             "User-Agent": "LawLegal-Public-Lead-Monitor/1.0 (read-only public search)",
-            "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.5",
+            "Accept": "text/html, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.5",
         },
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -149,9 +147,6 @@ def _query_urls(query: str) -> list[str]:
     country = _country(query)
     gl = country if country in {"DE", "AT", "CH", "BE", "NL"} else "LU"
     q = query.replace(f"[{country}]", "").strip()
-    # Do not require the words "post/permalink" in the search query: that was
-    # causing Google News to return zero results. We broaden discovery here and
-    # enforce direct Facebook-post URLs and first-person language below.
     base = (
         f"site:facebook.com ({q}) "
         "-site:anwalt24.de -site:anwalt.de -site:banki.ru "
@@ -159,12 +154,46 @@ def _query_urls(query: str) -> list[str]:
     )
     params = urllib.parse.urlencode({"q": base, "hl": "de", "gl": gl, "ceid": f"{gl}:de"})
     urls = [f"https://news.google.com/rss/search?{params}"]
-
-    # Second public index. Some Facebook posts are absent from Google News but
-    # still appear in Bing News RSS. Same strict filters are applied afterwards.
     bing_params = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "format": "rss", "setlang": "de"})
     urls.append(f"https://www.bing.com/news/search?{bing_params}")
+
+    # News indexes are poor at returning the actual Facebook post URL. Add
+    # normal public web-search pages as discovery sources. We only extract
+    # explicit facebook.com links and still require a direct post URL below.
+    google_web = urllib.parse.urlencode({"q": base, "hl": "de", "gl": gl, "num": "20"})
+    urls.append(f"https://www.google.com/search?{google_web}")
+    bing_web = urllib.parse.urlencode({"q": f"site:facebook.com {q}", "setlang": "de"})
+    urls.append(f"https://www.bing.com/search?{bing_web}")
     return urls
+
+
+def _search_links(payload: bytes) -> list[dict[str, str]]:
+    """Extract public Facebook result links from normal search HTML."""
+    text = payload.decode("utf-8", errors="ignore")
+    text = html.unescape(text)
+    candidates: list[str] = []
+    # Google/Bing both expose result hrefs in HTML, though their surrounding
+    # markup changes frequently. Decode redirect URLs before filtering.
+    for raw in re.findall(r'href=["\']([^"\']+)["\']', text, flags=re.I):
+        candidate = html.unescape(raw)
+        if candidate.startswith("/url?q="):
+            candidate = urllib.parse.parse_qs(urllib.parse.urlparse(candidate).query).get("q", [""])[0]
+        elif candidate.startswith("/url?url="):
+            candidate = urllib.parse.parse_qs(urllib.parse.urlparse(candidate).query).get("url", [""])[0]
+        elif candidate.startswith("/"):
+            continue
+        if _is_facebook(candidate) and _direct_post(candidate):
+            candidates.append(candidate)
+
+    seen: set[str] = set()
+    result: list[dict[str, str]] = []
+    for link in candidates:
+        normalized = link.split("#", 1)[0]
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append({"title": "", "summary": "", "author": "", "link": normalized})
+    return result
 
 
 async def collect_once(settings) -> FacebookStats:
@@ -177,7 +206,10 @@ async def collect_once(settings) -> FacebookStats:
         for query_url in _query_urls(query):
             try:
                 payload = await asyncio.to_thread(_fetch, query_url, settings.rss_timeout_seconds)
-                items = _items(payload)[: settings.facebook_max_items]
+                if "google.com/search" in query_url or "bing.com/search" in query_url:
+                    items = _search_links(payload)
+                else:
+                    items = _items(payload)[: settings.facebook_max_items]
                 stats = FacebookStats(
                     stats.queries, stats.items + len(items), stats.facebook,
                     stats.author, stats.direct_posts, stats.personal,
@@ -197,6 +229,9 @@ async def collect_once(settings) -> FacebookStats:
                     )
 
                     public_author = item.get("author", "").strip()
+                    # Search engines often omit the Facebook author. For those
+                    # results keep the post URL for a later manual review, but
+                    # never turn an author-less hit into an emailed lead.
                     if not public_author:
                         continue
                     stats = FacebookStats(

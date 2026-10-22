@@ -5,6 +5,7 @@ import asyncio
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 
+from .community_public import collect_once as collect_community_once
 from .facebook_public import collect_once as collect_facebook_once
 from .gmail_alerts import collect_once as collect_gmail_once
 from .rss_leads import collect_once as collect_rss_once
@@ -30,6 +31,7 @@ async def run(settings) -> None:
 
     print("Gmail collector uses readonly OAuth and does not mark messages as read.")
     print(f"RSS public-feed collector: {len(settings.rss_feeds)} configured feed(s)")
+    print("Community monitor: public Reddit search RSS + COMMUNITY_FEEDS")
     print(f"Facebook public monitor: {'enabled' if settings.facebook_enabled else 'disabled'}")
 
     try:
@@ -69,6 +71,18 @@ async def run(settings) -> None:
                 )
             except Exception as exc:
                 print(f"RSS collector cycle failed: {exc}")
+
+            try:
+                community_stats = await collect_community_once(settings)
+                print(
+                    "Community public cycle: "
+                    f"feeds={community_stats.feeds} items={community_stats.items} "
+                    f"direct_loss={community_stats.direct_loss} "
+                    f"qualified={community_stats.qualified} hot={community_stats.hot} "
+                    f"normal={community_stats.normal}"
+                )
+            except Exception as exc:
+                print(f"Community public collector failed: {exc}")
 
             try:
                 facebook_stats = await collect_facebook_once(settings)

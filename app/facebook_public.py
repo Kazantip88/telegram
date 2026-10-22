@@ -35,7 +35,6 @@ _PERSONAL = (
     r"\bmir\s+wurde\b.{0,150}\b(?:geld|auszahlung|konto|einzahlung)\b",
     r"\bich\s+kann\s+mein\s+geld\s+nicht\s+(?:auszahlen|abheben|zurückbekommen)\b",
     r"\bich\s+bekomme\s+mein\s+geld\s+nicht\s+zurück\b",
-    r"\bich\s+brauche\s+(?:hilfe|einen\s+anwalt|rechtliche\s+hilfe)\b.{0,180}\b(?:broker|geld|invest|krypto|trading|betrug)\b",
     r"\bi\s+(?:lost|lose|have\s+lost)\b.{0,180}\b(?:money|funds|crypto|bitcoin|investment)\b",
     r"\bi\s+was\s+(?:scammed|defrauded)\b",
     r"\bmy\s+money\b.{0,120}\b(?:withdraw|withdrawal|back)\b",
@@ -97,6 +96,28 @@ def _personal(text: str) -> bool:
     return any(re.search(pattern, lowered, flags=re.I | re.S) for pattern in _PERSONAL)
 
 
+# Search snippets can contain group names or adjacent page text. Require a
+# first-person loss/withdrawal statement before treating a result as a lead.
+_EXPLICIT_LOSS = (
+    r"\bich\s+(?:habe|hatte)\b.{0,220}\b(?:geld|ersparnisse|euro|investition|investment|einzahlung|depot|konto)\b.{0,180}\b(?:verloren|weg|nicht\s+zurück|nicht\s+auszahlen|nicht\s+abheben|investiert|überwiesen|bezahlt)\b",
+    r"\bich\s+wurde\s+(?:betrogen|abgezockt|getäuscht|beraubt)\b",
+    r"\b(?:ich|wir)\s+(?:haben|habe)\b.{0,180}\b(?:geld|euro|krypto|bitcoin|trading)\b.{0,180}\b(?:verloren|weg|betrogen)\b",
+    r"\bich\s+kann\s+mein\s+geld\s+nicht\s+(?:auszahlen|abheben|zurückbekommen)\b",
+    r"\bich\s+bekomme\s+mein\s+geld\s+nicht\s+zurück\b",
+    r"\bi\s+(?:lost|lose|have\s+lost)\b.{0,180}\b(?:money|funds|crypto|bitcoin|investment)\b",
+    r"\bi\s+was\s+(?:scammed|defrauded)\b",
+    r"\bmy\s+money\b.{0,120}\b(?:withdraw|withdrawal|back)\b",
+    r"\bя\s+(?:потерял|потеряла|потеряли)\b.{0,180}\b(?:деньги|руб|евро|крипто|инвести)\b",
+    r"\bменя\s+(?:обманули|обокрали)\b.{0,120}\b(?:брокер|крипто|инвест|деньги)\b",
+    r"\bне\s+могу\s+(?:вывести|получить\s+назад)\b.{0,120}\b(?:деньги|средства|депозит)\b",
+)
+
+
+def _explicit_loss(text: str) -> bool:
+    lowered = text.lower()
+    return any(re.search(pattern, lowered, flags=re.I | re.S) for pattern in _EXPLICIT_LOSS)
+
+
 def _country(query: str) -> str:
     match = re.search(r"\[([A-Z]{2})\]", query.upper())
     return match.group(1) if match else "DE"
@@ -136,7 +157,9 @@ def _extract_author(text: str) -> str:
         match = re.search(pattern, text, flags=re.I)
         if match:
             candidate = _clean(match.group(1))
-            if candidate and not candidate.lower().startswith(("www.", "http", "site:")):
+            lowered = candidate.lower()
+            group_or_page_terms = ("betrüger", "betrug", "scam", "fraud", "community", "gruppe", "group", "warnung", "hilfe", "marketplace", "kleinanzeigen")
+            if candidate and not lowered.startswith(("www.", "http", "site:")) and not any(term in lowered for term in group_or_page_terms):
                 return candidate
     return ""
 
@@ -212,13 +235,14 @@ async def collect_once(settings) -> FacebookStats:
                         continue
                     stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts + 1, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
                     text = " — ".join(x for x in (item.get("title"), item.get("summary")) if x).strip()
-                    if not _personal(text):
+                    if not _personal(text) or not _explicit_loss(text):
                         continue
                     stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal + 1, stats.qualified, stats.duplicates, stats.hot, stats.normal)
                     signals = detect(text)
                     result = score_lead(signals)
                     if result.total < settings.min_email_score:
-                        result = type(result)(50, "NORMAL", result.reasons + ("explicit personal Facebook victim post",))
+                        print(f"Facebook candidate held for review: score={result.total} below threshold={settings.min_email_score} url={source_url}")
+                        continue
                     reasons = list(result.reasons)
                     reasons.extend((f"source_url={source_url}", f"facebook_target_country={_country(query)}", f"public_author={public_author or 'not exposed in search result'}"))
                     lead = {

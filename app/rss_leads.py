@@ -167,6 +167,8 @@ async def _save_item(settings, feed_url: str, item: dict[str, str]):
         "source": source,
         "sender_id": None,
         "username": item.get("author") or None,
+        "public_name": item.get("author") or None,
+        "source_url": source_url,
         "language": signals.language,
         "amount": max(signals.amounts) if signals.amounts else None,
         "score": result.total,

@@ -47,11 +47,12 @@ Authorized public Telegram sources
 - SQLite storage
 - Email message generation for the law-firm inbox
 - Dry-run mode for safe testing
-- No automatic Telegram outreach to users
+- Read-only public Reddit search RSS and optional public forum/Q&A RSS feeds (`COMMUNITY_FEEDS`)
+- No automatic outreach to users on Telegram, Reddit, or other platforms
 
 ## Source model
 
-The MVP monitors **public Telegram sources that are explicitly configured and authorized** in `TG_SOURCES`. Telegram does not expose an API that guarantees a complete inventory of every public Telegram channel/group, so a claim of scanning 100% of Telegram would be misleading.
+The monitor combines **public Telegram sources explicitly configured and authorized** in `TG_SOURCES`, public Reddit search RSS, and optional public forum/Q&A RSS feeds configured in `COMMUNITY_FEEDS`. Telegram does not expose an API that guarantees a complete inventory of every public Telegram channel/group, so a claim of scanning 100% of Telegram would be misleading.
 
 For broader coverage, maintain a large registry of public RU/DE sources in `config/public_sources.example.txt` and periodically review/expand it. The monitor can then process the configured sources continuously without contacting their members.
 
@@ -60,8 +61,9 @@ For broader coverage, maintain a large registry of public RU/DE sources in `conf
 1. Copy `.env.example` to `.env`.
 2. Create a Telegram API application at `my.telegram.org` and put `TG_API_ID` and `TG_API_HASH` in `.env`.
 3. Add public channels/groups you are authorized to monitor to `TG_SOURCES` (comma-separated usernames or public links).
-4. Configure the SMTP provider used by the law firm.
-5. Start with `DRY_RUN=true` and review the generated messages before enabling any production mail transport.
+4. Optionally set `COMMUNITY_FEEDS` to comma-separated public RSS/Atom feeds from forums or Q&A sites; Reddit search RSS is enabled by default.
+5. Configure the SMTP provider used by the law firm.
+6. Start with `DRY_RUN=true` and review the generated messages before enabling any production mail transport.
 
 ```bash
 python -m venv .venv

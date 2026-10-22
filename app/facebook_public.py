@@ -141,8 +141,9 @@ def _query_urls(query: str) -> list[str]:
     q = query.replace(f"[{country}]", "").strip()
     base = f"site:facebook.com ({q}) -site:anwalt.de -site:anwalt24.de -site:banki.ru"
     encoded = urllib.parse.quote_plus(base)
+    # DuckDuckGo is consistently returning proxy/auth errors in the user's run.
+    # Prefer the two engines that have returned parseable public results.
     return [
-        f"https://html.duckduckgo.com/html/?q={encoded}",
         f"https://www.bing.com/search?q={encoded}&setlang=de",
         f"https://www.google.com/search?q={encoded}&hl=de",
     ]

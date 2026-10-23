@@ -17,6 +17,7 @@ from .scoring import score_lead
 @dataclass(frozen=True)
 class FacebookStats:
     queries: int = 0
+    search_results: int = 0
     items: int = 0
     facebook: int = 0
     author: int = 0
@@ -54,7 +55,8 @@ _BLOCKED_PATH_MARKERS = (
     "/blog/", "/presse/", "/press/",
 )
 _DIRECT_FACEBOOK_MARKERS = (
-    "/posts/", "/permalink/", "/story.php", "/photo.php", "/share/p/",
+    "/posts/", "/permalink/", "/story.php", "/permalink.php", "/photo.php",
+    "/share/p/", "/share/v/", "/share/r/", "/share/",
 )
 
 
@@ -87,7 +89,7 @@ def _direct_post(url: str) -> bool:
     if not _is_facebook(url):
         return False
     if "/groups/" in path:
-        return "/posts/" in path or "/permalink/" in path or "story_fbid=" in query
+        return "/posts/" in path or "/permalink" in path or "story_fbid=" in query
     return any(marker in path for marker in _DIRECT_FACEBOOK_MARKERS)
 
 
@@ -95,9 +97,6 @@ def _personal(text: str) -> bool:
     lowered = text.lower()
     return any(re.search(pattern, lowered, flags=re.I | re.S) for pattern in _PERSONAL)
 
-
-# Search snippets can contain group names or adjacent page text. Require a
-# first-person loss/withdrawal statement before treating a result as a lead.
 _EXPLICIT_LOSS = (
     r"\bich\s+(?:habe|hatte)\b.{0,220}\b(?:geld|ersparnisse|euro|investition|investment|einzahlung|depot|konto)\b.{0,180}\b(?:verloren|weg|nicht\s+zurück|nicht\s+auszahlen|nicht\s+abheben|investiert|überwiesen|bezahlt)\b",
     r"\bich\s+wurde\s+(?:betrogen|abgezockt|getäuscht|beraubt)\b",
@@ -141,11 +140,10 @@ def _query_urls(query: str) -> list[str]:
     q = query.replace(f"[{country}]", "").strip()
     base = f"site:facebook.com ({q}) -site:anwalt.de -site:anwalt24.de -site:banki.ru"
     encoded = urllib.parse.quote_plus(base)
-    # DuckDuckGo is consistently returning proxy/auth errors in the user's run.
-    # Prefer the two engines that have returned parseable public results.
     return [
+        f"https://www.bing.com/search?format=rss&q={encoded}&setlang=de",
         f"https://www.bing.com/search?q={encoded}&setlang=de",
-        f"https://www.google.com/search?q={encoded}&hl=de",
+        f"https://www.google.com/search?q={encoded}&hl=de&num=20",
     ]
 
 
@@ -167,38 +165,62 @@ def _extract_author(text: str) -> str:
 
 def _decode_result_url(raw: str) -> str:
     candidate = html.unescape(raw)
-    if candidate.startswith("//"):
-        candidate = "https:" + candidate
-    if candidate.startswith("/url?"):
-        values = urllib.parse.parse_qs(urllib.parse.urlparse(candidate).query)
-        candidate = values.get("q", values.get("url", [""]))[0]
-    parsed = urllib.parse.urlparse(candidate)
-    if parsed.netloc.lower().endswith("duckduckgo.com"):
-        candidate = urllib.parse.parse_qs(parsed.query).get("uddg", [candidate])[0]
+    for _ in range(2):
+        if candidate.startswith("//"):
+            candidate = "https:" + candidate
+        parsed = urllib.parse.urlparse(candidate)
+        if parsed.path == "/url":
+            values = urllib.parse.parse_qs(parsed.query)
+            candidate = values.get("q", values.get("url", [candidate]))[0]
+        elif parsed.netloc.lower().endswith("duckduckgo.com"):
+            candidate = urllib.parse.parse_qs(parsed.query).get("uddg", [candidate])[0]
+        else:
+            break
+        candidate = html.unescape(urllib.parse.unquote(candidate))
     return urllib.parse.unquote(candidate)
 
 
 def _search_links(payload: bytes) -> list[dict[str, str]]:
     text = html.unescape(payload.decode("utf-8", errors="ignore"))
     result: list[dict[str, str]] = []
+
+    # Bing RSS is intentionally parsed separately: it is much less fragile than
+    # scraping the changing Bing/Google result-page HTML.
+    if "<item>" in text.lower() and ("<rss" in text.lower() or "<channel" in text.lower()):
+        for item_match in re.finditer(r"<item>(.*?)</item>", text, flags=re.I | re.S):
+            item = item_match.group(1)
+            title_match = re.search(r"<title>(.*?)</title>", item, flags=re.I | re.S)
+            link_match = re.search(r"<link>(.*?)</link>", item, flags=re.I | re.S)
+            desc_match = re.search(r"<description>(.*?)</description>", item, flags=re.I | re.S)
+            if not link_match:
+                continue
+            candidate = _decode_result_url(_clean(link_match.group(1)))
+            if not _is_facebook(candidate):
+                continue
+            title = _clean(title_match.group(1)) if title_match else "Facebook public result"
+            summary = _clean(desc_match.group(1)) if desc_match else ""
+            result.append({"title": title, "summary": summary[:1600], "author": _extract_author(title), "link": candidate})
+
+    # HTML fallback for Bing/Google. Do not require the target URL to use one
+    # exact Facebook path before collecting it; _direct_post decides that later.
     for match in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', text, flags=re.I | re.S):
         raw, title_html = match.groups()
         candidate = _decode_result_url(raw)
-        if not (_is_facebook(candidate) and _direct_post(candidate)):
+        if not _is_facebook(candidate):
             continue
         title = _clean(title_html)
         if not title or title.lower() in {"facebook", "log in", "login"}:
             continue
-        summary = _clean(text[match.end():match.end() + 2500])[:1600]
-        result.append({"title": title, "summary": summary, "author": _extract_author(title), "link": candidate})
+        context = _clean(text[match.end():match.end() + 3000])
+        result.append({"title": title, "summary": context[:1600], "author": _extract_author(title), "link": candidate})
 
-    # Some engines put the target Facebook URL in a data-* attribute.
-    for match in re.finditer(r'(?:href|data-href|data-url)=["\']([^"\']+facebook\.com[^"\']+)["\']', text, flags=re.I):
+    # Also catch target Facebook URLs embedded in data attributes / JSON-ish HTML.
+    for match in re.finditer(r'(?:href|data-href|data-url)=["\']([^"\']*facebook\.com[^"\']+)["\']', text, flags=re.I):
         candidate = _decode_result_url(match.group(1))
-        if not (_is_facebook(candidate) and _direct_post(candidate)):
+        if not _is_facebook(candidate):
             continue
-        context = _clean(text[max(0, match.start() - 900):match.end() + 1200])
-        result.append({"title": "Facebook public post", "summary": context, "author": _extract_author(context), "link": candidate})
+        context = _clean(text[max(0, match.start() - 1200):match.end() + 1800])
+        result.append({"title": "Facebook public result", "summary": context[:1600], "author": _extract_author(context), "link": candidate})
 
     seen: set[str] = set()
     unique: list[dict[str, str]] = []
@@ -222,23 +244,23 @@ async def collect_once(settings) -> FacebookStats:
             try:
                 payload = await asyncio.to_thread(_fetch, query_url, settings.rss_timeout_seconds)
                 items = _search_links(payload)[: settings.facebook_max_items]
-                stats = FacebookStats(stats.queries, stats.items + len(items), stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
+                stats = FacebookStats(stats.queries, stats.search_results + len(items), stats.items + len(items), stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
                 for item in items:
                     source_url = item.get("link", "")
                     if not source_url or source_url in seen_urls or _blocked_source(source_url):
                         continue
                     seen_urls.add(source_url)
-                    stats = FacebookStats(stats.queries, stats.items, stats.facebook + 1, stats.author, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
+                    stats = FacebookStats(stats.queries, stats.search_results, stats.items, stats.facebook + 1, stats.author, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
                     public_author = item.get("author", "").strip()
                     if public_author:
-                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author + 1, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
+                        stats = FacebookStats(stats.queries, stats.search_results, stats.items, stats.facebook, stats.author + 1, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
                     if not _direct_post(source_url):
                         continue
-                    stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts + 1, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
+                    stats = FacebookStats(stats.queries, stats.search_results, stats.items, stats.facebook, stats.author, stats.direct_posts + 1, stats.personal, stats.qualified, stats.duplicates, stats.hot, stats.normal)
                     text = " — ".join(x for x in (item.get("title"), item.get("summary")) if x).strip()
                     if not _personal(text) or not _explicit_loss(text):
                         continue
-                    stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal + 1, stats.qualified, stats.duplicates, stats.hot, stats.normal)
+                    stats = FacebookStats(stats.queries, stats.search_results, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal + 1, stats.qualified, stats.duplicates, stats.hot, stats.normal)
                     signals = detect(text)
                     result = score_lead(signals)
                     if result.total < settings.min_email_score:
@@ -266,15 +288,20 @@ async def collect_once(settings) -> FacebookStats:
                     saved = await save_lead(settings.db_path, lead)
                     print(f"Facebook personal candidate: author={public_author!r} score={result.total} priority={result.priority} duplicate={'no' if saved else 'yes'} url={source_url}")
                     if not saved:
-                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates + 1, stats.hot, stats.normal)
+                        stats = FacebookStats(stats.queries, stats.search_results, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified, stats.duplicates + 1, stats.hot, stats.normal)
                         continue
                     await send_message(settings, build_message(settings, lead))
                     if result.priority == "HOT":
-                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.duplicates, stats.hot + 1, stats.normal)
+                        stats = FacebookStats(stats.queries, stats.search_results, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.duplicates, stats.hot + 1, stats.normal)
                     else:
-                        stats = FacebookStats(stats.queries, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.duplicates, stats.hot, stats.normal + 1)
+                        stats = FacebookStats(stats.queries, stats.search_results, stats.items, stats.facebook, stats.author, stats.direct_posts, stats.personal, stats.qualified + 1, stats.duplicates, stats.hot, stats.normal + 1)
             except Exception as exc:
                 print(f"Facebook public search failed for {query_url!r}: {exc}")
+    print(
+        f"Facebook search diagnostics: queries={stats.queries} search_results={stats.search_results} "
+        f"facebook_urls={stats.facebook} direct_posts={stats.direct_posts} personal={stats.personal} "
+        f"qualified={stats.qualified}"
+    )
     return stats
 
 
@@ -283,8 +310,8 @@ async def main() -> None:
     stats = await collect_once(settings)
     print(
         "Facebook public test: "
-        f"queries={stats.queries} items={stats.items} facebook={stats.facebook} "
-        f"author={stats.author} direct_posts={stats.direct_posts} personal={stats.personal} "
+        f"queries={stats.queries} search_results={stats.search_results} items={stats.items} "
+        f"facebook={stats.facebook} author={stats.author} direct_posts={stats.direct_posts} personal={stats.personal} "
         f"qualified={stats.qualified} duplicates={stats.duplicates} hot={stats.hot} normal={stats.normal}"
     )
 

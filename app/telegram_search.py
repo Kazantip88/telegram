@@ -60,7 +60,7 @@ async def _save_candidate(
     username: str | None = None,
     parent_id: int | None = None,
 ):
-    classification = classify(text, source=source)
+    classification = classify(text, source="user_generated")
     if classification.kind != "lead":
         return None
 
@@ -124,7 +124,7 @@ async def _public_chat_info(message) -> tuple[str | None, str | None]:
     return None, None
 
 
-async def _global_search_once(client: TelegramClient, settings) -> tuple[int, int, int, int]:
+async def _global_search_once(client: TelegramClient, settings) -> tuple[int, int, int, int, int]:
     """Search Telegram's public/global index instead of relying only on TG_SOURCES."""
     results = qualified = hot = normal = 0
     seen: set[tuple[str, int]] = set()
@@ -138,9 +138,8 @@ async def _global_search_once(client: TelegramClient, settings) -> tuple[int, in
                 if not text:
                     continue
 
-                username, title = await _public_chat_info(message)
+                username, _title = await _public_chat_info(message)
                 if not username:
-                    # Global search can expose non-public dialogs. Ignore those.
                     continue
 
                 source_name = f"@{username}"
@@ -178,13 +177,11 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
     global_queries = global_results = 0
     posts_without_comments = unavailable_discussions = inactive_discussions = comments_checked = 0
 
-    # Main field 1: global public Telegram search.
     global_queries, global_results, global_qualified, global_hot, global_normal = await _global_search_once(client, settings)
     qualified += global_qualified
     hot += global_hot
     normal += global_normal
 
-    # Main field 2: explicitly configured public sources and their comments.
     for source in settings.tg_sources:
         await _pause(settings)
         try:

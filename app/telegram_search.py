@@ -20,6 +20,8 @@ from .scoring import score_lead
 class SearchStats:
     sources: int = 0
     messages: int = 0
+    global_queries: int = 0
+    global_results: int = 0
     posts_without_comments: int = 0
     unavailable_discussions: int = 0
     inactive_discussions: int = 0
@@ -58,10 +60,6 @@ async def _save_candidate(
     username: str | None = None,
     parent_id: int | None = None,
 ):
-    # Telegram posts/comments are user-generated public content, so they do not
-    # need the URL/source classification used by Google Alerts. They do need the
-    # same direct-victim gate: generic investment questions and third-person
-    # stories must not become client leads just because they contain keywords.
     classification = classify(text, source=source)
     if classification.kind != "lead":
         return None
@@ -115,12 +113,78 @@ async def _public_username(message) -> str | None:
     return str(username).strip() if username else None
 
 
+async def _public_chat_info(message) -> tuple[str | None, str | None]:
+    try:
+        chat = getattr(message, "chat", None) or await message.get_chat()
+    except Exception:
+        return None, None
+    username = getattr(chat, "username", None)
+    if username:
+        return str(username).strip(), str(getattr(chat, "title", None) or username).strip()
+    return None, None
+
+
+async def _global_search_once(client: TelegramClient, settings) -> tuple[int, int, int, int]:
+    """Search Telegram's public/global index instead of relying only on TG_SOURCES."""
+    results = qualified = hot = normal = 0
+    seen: set[tuple[str, int]] = set()
+
+    for query in settings.tg_search_queries:
+        await _pause(settings)
+        try:
+            async for message in client.iter_messages(None, search=query, limit=settings.search_limit):
+                results += 1
+                text = (message.raw_text or "").strip()
+                if not text:
+                    continue
+
+                username, title = await _public_chat_info(message)
+                if not username:
+                    # Global search can expose non-public dialogs. Ignore those.
+                    continue
+
+                source_name = f"@{username}"
+                key = (source_name, int(message.id))
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                priority = await _save_candidate(
+                    settings,
+                    source_name,
+                    message.id,
+                    text,
+                    str(message.sender_id) if message.sender_id else None,
+                    await _public_username(message),
+                    None,
+                )
+                if priority is None:
+                    continue
+                qualified += 1
+                if priority == "HOT":
+                    hot += 1
+                else:
+                    normal += 1
+        except FloodWaitError:
+            raise
+        except Exception as exc:
+            print(f"Telegram global search failed for query {query!r}: {exc}")
+
+    return len(settings.tg_search_queries), results, qualified, hot, normal
+
+
 async def search_once(client: TelegramClient, settings) -> SearchStats:
     qualified = hot = normal = messages = 0
+    global_queries = global_results = 0
     posts_without_comments = unavailable_discussions = inactive_discussions = comments_checked = 0
 
-    # Deliberately avoid global Telegram search. Only explicitly configured,
-    # authorized public sources are read.
+    # Main field 1: global public Telegram search.
+    global_queries, global_results, global_qualified, global_hot, global_normal = await _global_search_once(client, settings)
+    qualified += global_qualified
+    hot += global_hot
+    normal += global_normal
+
+    # Main field 2: explicitly configured public sources and their comments.
     for source in settings.tg_sources:
         await _pause(settings)
         try:
@@ -202,6 +266,8 @@ async def search_once(client: TelegramClient, settings) -> SearchStats:
     return SearchStats(
         sources=len(settings.tg_sources),
         messages=messages,
+        global_queries=global_queries,
+        global_results=global_results,
         posts_without_comments=posts_without_comments,
         unavailable_discussions=unavailable_discussions,
         inactive_discussions=inactive_discussions,
@@ -223,11 +289,13 @@ async def main() -> None:
     )
     await client.start()
     try:
-        print(f"Telegram one-cycle search: {len(settings.tg_sources)} source(s)")
+        print(f"Telegram one-cycle search: {len(settings.tg_sources)} configured source(s)")
+        print(f"Telegram global victim search: {len(settings.tg_search_queries)} query(s)")
         stats = await search_once(client, settings)
         print(
             "Telegram cycle: "
             f"sources={stats.sources} messages={stats.messages} "
+            f"global_queries={stats.global_queries} global_results={stats.global_results} "
             f"comments={stats.comments_checked} qualified={stats.qualified} "
             f"hot={stats.hot} normal={stats.normal}"
         )

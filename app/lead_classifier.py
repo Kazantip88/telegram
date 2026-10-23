@@ -13,7 +13,8 @@ NEWS_HOSTS = {
     "spiegel.de", "faz.net", "welt.de", "bild.de",
 }
 USER_GENERATED_HOSTS = {
-    "quora.com", "gutefrage.net", "reddit.com", "pikabu.ru",
+    "quora.com", "gutefrage.net", "reddit.com", "pikabu.ru", "stackexchange.com",
+    "stackexchange.com", "finanzfrage.net", "trustpilot.com",
 }
 
 @dataclass(frozen=True)

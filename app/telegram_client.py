@@ -88,7 +88,8 @@ async def run(settings) -> None:
                 facebook_stats = await collect_facebook_once(settings)
                 print(
                     "Facebook public cycle: "
-                    f"queries={facebook_stats.queries} items={facebook_stats.items} "
+                    f"queries={facebook_stats.queries} search_results={facebook_stats.search_results} "
+                    f"facebook_urls={facebook_stats.facebook} direct_posts={facebook_stats.direct_posts} "
                     f"personal={facebook_stats.personal} qualified={facebook_stats.qualified} "
                     f"hot={facebook_stats.hot} normal={facebook_stats.normal}"
                 )

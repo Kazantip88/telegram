@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import html
 import re
 import urllib.parse
@@ -165,15 +166,27 @@ def _extract_author(text: str) -> str:
 
 def _decode_result_url(raw: str) -> str:
     candidate = html.unescape(raw)
-    for _ in range(2):
+    for _ in range(3):
         if candidate.startswith("//"):
             candidate = "https:" + candidate
         parsed = urllib.parse.urlparse(candidate)
+        host = parsed.netloc.lower()
         if parsed.path == "/url":
             values = urllib.parse.parse_qs(parsed.query)
             candidate = values.get("q", values.get("url", [candidate]))[0]
-        elif parsed.netloc.lower().endswith("duckduckgo.com"):
+        elif host.endswith("duckduckgo.com"):
             candidate = urllib.parse.parse_qs(parsed.query).get("uddg", [candidate])[0]
+        elif host.endswith("bing.com") and parsed.path.startswith("/ck/a"):
+            values = urllib.parse.parse_qs(parsed.query)
+            encoded = values.get("u", [""])[0]
+            if encoded.startswith("a1"):
+                try:
+                    padded = encoded[2:] + "=" * (-len(encoded[2:]) % 4)
+                    candidate = base64.urlsafe_b64decode(padded).decode("utf-8", errors="ignore")
+                except Exception:
+                    break
+            else:
+                candidate = values.get("url", [candidate])[0]
         else:
             break
         candidate = html.unescape(urllib.parse.unquote(candidate))
@@ -184,8 +197,6 @@ def _search_links(payload: bytes) -> list[dict[str, str]]:
     text = html.unescape(payload.decode("utf-8", errors="ignore"))
     result: list[dict[str, str]] = []
 
-    # Bing RSS is intentionally parsed separately: it is much less fragile than
-    # scraping the changing Bing/Google result-page HTML.
     if "<item>" in text.lower() and ("<rss" in text.lower() or "<channel" in text.lower()):
         for item_match in re.finditer(r"<item>(.*?)</item>", text, flags=re.I | re.S):
             item = item_match.group(1)
@@ -201,8 +212,6 @@ def _search_links(payload: bytes) -> list[dict[str, str]]:
             summary = _clean(desc_match.group(1)) if desc_match else ""
             result.append({"title": title, "summary": summary[:1600], "author": _extract_author(title), "link": candidate})
 
-    # HTML fallback for Bing/Google. Do not require the target URL to use one
-    # exact Facebook path before collecting it; _direct_post decides that later.
     for match in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', text, flags=re.I | re.S):
         raw, title_html = match.groups()
         candidate = _decode_result_url(raw)
@@ -214,7 +223,6 @@ def _search_links(payload: bytes) -> list[dict[str, str]]:
         context = _clean(text[match.end():match.end() + 3000])
         result.append({"title": title, "summary": context[:1600], "author": _extract_author(title), "link": candidate})
 
-    # Also catch target Facebook URLs embedded in data attributes / JSON-ish HTML.
     for match in re.finditer(r'(?:href|data-href|data-url)=["\']([^"\']*facebook\.com[^"\']+)["\']', text, flags=re.I):
         candidate = _decode_result_url(match.group(1))
         if not _is_facebook(candidate):

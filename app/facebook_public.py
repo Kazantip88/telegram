@@ -63,6 +63,7 @@ _DIRECT_FACEBOOK_MARKERS = (
 
 def _clean(value: str) -> str:
     value = html.unescape(value or "")
+    value = value.replace(r"\u002F", "/").replace(r"\/", "/").replace(r"\u003A", ":")
     value = re.sub(r"<[^>]+>", " ", value)
     return " ".join(value.split())
 
@@ -145,6 +146,7 @@ def _query_urls(query: str) -> list[str]:
         f"https://www.bing.com/search?format=rss&q={encoded}&setlang=de",
         f"https://www.bing.com/search?q={encoded}&setlang=de",
         f"https://www.google.com/search?q={encoded}&hl=de&num=20",
+        f"https://html.duckduckgo.com/html/?q={encoded}&kl=de-de",
     ]
 
 
@@ -165,8 +167,8 @@ def _extract_author(text: str) -> str:
 
 
 def _decode_result_url(raw: str) -> str:
-    candidate = html.unescape(raw)
-    for _ in range(3):
+    candidate = _clean(raw).strip(" '\"")
+    for _ in range(4):
         if candidate.startswith("//"):
             candidate = "https:" + candidate
         parsed = urllib.parse.urlparse(candidate)
@@ -189,12 +191,27 @@ def _decode_result_url(raw: str) -> str:
                 candidate = values.get("url", [candidate])[0]
         else:
             break
-        candidate = html.unescape(urllib.parse.unquote(candidate))
+        candidate = html.unescape(urllib.parse.unquote(candidate)).replace(r"\/", "/")
     return urllib.parse.unquote(candidate)
+
+
+def _append_result(result: list[dict[str, str]], link: str, title: str, summary: str) -> None:
+    candidate = _decode_result_url(link)
+    if not _is_facebook(candidate):
+        return
+    clean_title = _clean(title) or "Facebook public result"
+    clean_summary = _clean(summary)
+    result.append({
+        "title": clean_title,
+        "summary": clean_summary[:1600],
+        "author": _extract_author(clean_title),
+        "link": candidate,
+    })
 
 
 def _search_links(payload: bytes) -> list[dict[str, str]]:
     text = html.unescape(payload.decode("utf-8", errors="ignore"))
+    text = text.replace(r"\/", "/").replace(r"\u002F", "/")
     result: list[dict[str, str]] = []
 
     if "<item>" in text.lower() and ("<rss" in text.lower() or "<channel" in text.lower()):
@@ -203,32 +220,27 @@ def _search_links(payload: bytes) -> list[dict[str, str]]:
             title_match = re.search(r"<title>(.*?)</title>", item, flags=re.I | re.S)
             link_match = re.search(r"<link>(.*?)</link>", item, flags=re.I | re.S)
             desc_match = re.search(r"<description>(.*?)</description>", item, flags=re.I | re.S)
-            if not link_match:
-                continue
-            candidate = _decode_result_url(_clean(link_match.group(1)))
-            if not _is_facebook(candidate):
-                continue
-            title = _clean(title_match.group(1)) if title_match else "Facebook public result"
-            summary = _clean(desc_match.group(1)) if desc_match else ""
-            result.append({"title": title, "summary": summary[:1600], "author": _extract_author(title), "link": candidate})
+            if link_match:
+                _append_result(result, link_match.group(1), title_match.group(1) if title_match else "Facebook public result", desc_match.group(1) if desc_match else "")
 
+    # Bing/Google result anchors, including the normal Bing b_algo layout.
     for match in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', text, flags=re.I | re.S):
         raw, title_html = match.groups()
+        context = _clean(text[match.end():match.end() + 3500])
+        _append_result(result, raw, title_html, context)
+
+    # DuckDuckGo and search pages can store the target in result__a/data-href.
+    for match in re.finditer(r'(?:href|data-href|data-url)=["\']([^"\']+)["\']', text, flags=re.I):
+        raw = match.group(1)
         candidate = _decode_result_url(raw)
         if not _is_facebook(candidate):
             continue
-        title = _clean(title_html)
-        if not title or title.lower() in {"facebook", "log in", "login"}:
-            continue
-        context = _clean(text[match.end():match.end() + 3000])
-        result.append({"title": title, "summary": context[:1600], "author": _extract_author(title), "link": candidate})
+        context = _clean(text[max(0, match.start() - 800):match.end() + 2200])
+        _append_result(result, candidate, "Facebook public result", context)
 
-    for match in re.finditer(r'(?:href|data-href|data-url)=["\']([^"\']*facebook\.com[^"\']+)["\']', text, flags=re.I):
-        candidate = _decode_result_url(match.group(1))
-        if not _is_facebook(candidate):
-            continue
-        context = _clean(text[max(0, match.start() - 1200):match.end() + 1800])
-        result.append({"title": "Facebook public result", "summary": context[:1600], "author": _extract_author(context), "link": candidate})
+    # Escaped Facebook URLs embedded in search-engine JSON.
+    for match in re.finditer(r"https?:[/\\]+[/\\]+(?:www\.)?facebook\.com[/\\][^\"'<>\\s]+", text, flags=re.I):
+        _append_result(result, match.group(0), "Facebook public result", text[max(0, match.start() - 800):match.end() + 1600])
 
     seen: set[str] = set()
     unique: list[dict[str, str]] = []

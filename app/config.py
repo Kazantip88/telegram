@@ -16,6 +16,25 @@ def _bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+_DEFAULT_TELEGRAM_SEARCH_QUERIES = (
+    '"ich habe Geld verloren" Broker',
+    '"ich wurde betrogen" Broker',
+    '"mein Geld" "nicht zurück" Trading',
+    '"Auszahlung" "verweigert" Broker',
+    '"Auszahlung" "blockiert" Krypto',
+    '"Geld verloren" Trading Betrug',
+    '"Geld verloren" Krypto Betrug',
+    '"ich brauche Hilfe" Broker Betrug',
+    '"ich brauche einen Anwalt" Trading',
+    '"welcher Anwalt" Broker Betrug',
+    '"I lost money" broker scam',
+    '"I was scammed" broker withdrawal',
+    '"my money" "cannot withdraw" crypto',
+    '"я потерял деньги" брокер мошенники',
+    '"не могу вывести" деньги брокер',
+    '"меня обманули" брокер крипто',
+)
+
 _DEFAULT_FACEBOOK_QUERIES = (
     "[DE] \"ich habe Geld verloren\" Broker",
     "[DE] \"ich wurde betrogen\" Broker",
@@ -44,6 +63,7 @@ class Settings:
     tg_api_hash: str
     tg_session: str
     tg_sources: tuple[str, ...]
+    tg_search_queries: tuple[str, ...]
     smtp_host: str
     smtp_port: int
     smtp_user: str
@@ -82,6 +102,9 @@ def load_settings(require_telegram: bool = True) -> Settings:
     if require_telegram and not sources:
         raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
 
+    tg_search_queries_env = tuple(s.strip() for s in os.getenv("TG_SEARCH_QUERIES", "|").split("|") if s.strip())
+    tg_search_queries = tg_search_queries_env or _DEFAULT_TELEGRAM_SEARCH_QUERIES
+
     rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
     facebook_queries_env = tuple(s.strip() for s in os.getenv("FACEBOOK_QUERIES", "").split("|") if s.strip())
     facebook_queries = facebook_queries_env or _DEFAULT_FACEBOOK_QUERIES
@@ -94,6 +117,7 @@ def load_settings(require_telegram: bool = True) -> Settings:
         tg_api_hash=api_hash,
         tg_session=os.getenv("TG_SESSION", "data/telegram_leads"),
         tg_sources=sources,
+        tg_search_queries=tg_search_queries,
         smtp_host=os.getenv("SMTP_HOST", ""),
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
         smtp_user=os.getenv("SMTP_USER", ""),

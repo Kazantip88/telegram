@@ -7,6 +7,7 @@ import re
 import urllib.parse
 from dataclasses import dataclass
 
+from .lead_classifier import classify
 from .rss_leads import _fetch_sync, _items, _save_item, _personal_victim_language
 
 
@@ -20,8 +21,6 @@ class CommunityStats:
     normal: int = 0
 
 
-# Reddit's public RSS search endpoint; no account, login, private data, or DMs.
-# Search queries intentionally target first-person loss/withdrawal reports.
 _REDDIT_QUERIES = (
     '"I lost money" broker scam',
     '"cannot withdraw" crypto broker',
@@ -86,11 +85,15 @@ def _likely_promo_or_seo(text: str, title: str) -> bool:
         return True
     if sum(1 for p in _PROMO_PATTERNS if re.search(p, lowered, re.I)) >= 2:
         return True
-    # Long generic trading/review articles often mention losses as anecdotes.
-    # Require the title itself to indicate a complaint before treating them as leads.
     if len(text) > 2500 and not any(re.search(p, title.lower(), re.I) for p in _CLEAR_COMPLAINT_TITLE):
         return True
     return False
+
+
+def _is_direct_user_post(text: str, url: str) -> bool:
+    # Reuse the same source classifier as Google Alerts. Editorial/legal pages and
+    # unknown domains cannot become leads just because they contain victim-like text.
+    return classify(text, url, source="gmail:google-alerts").kind == "lead"
 
 
 async def collect_once(settings) -> CommunityStats:
@@ -116,17 +119,17 @@ async def collect_once(settings) -> CommunityStats:
                 title = item.get("title", "").strip()
                 summary = item.get("summary", "").strip()
                 text = " — ".join(part for part in (title, summary) if part).strip()
+                link = item.get("link", "")
                 if not text or not _personal_victim_language(text) or not _explicit_loss(text):
                     continue
-                if _likely_promo_or_seo(text, title):
-                    print(f"Community candidate rejected as promotional/article content: {item.get('link', '')}")
+                if not link or not _is_direct_user_post(text, link):
+                    print(f"Community candidate rejected: source is not an approved user-generated post: {link}")
                     continue
-                if is_reddit_search:
-                    link = item.get("link", "")
-                    if "reddit.com/" not in link or "/comments/" not in link:
-                        continue
-                # Never score an unlimited full post body. It can contain unrelated
-                # amounts, quoted stories, and promotional copy far from the title.
+                if _likely_promo_or_seo(text, title):
+                    print(f"Community candidate rejected as promotional/article content: {link}")
+                    continue
+                if is_reddit_search and ("reddit.com/" not in link or "/comments/" not in link):
+                    continue
                 bounded_item = dict(item)
                 bounded_item["summary"] = summary[:2500]
                 direct_loss += 1

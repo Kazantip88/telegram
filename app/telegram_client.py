@@ -13,7 +13,7 @@ from .telegram_search import search_once
 
 
 async def run(settings) -> None:
-    telegram_enabled = bool(settings.tg_api_id and settings.tg_api_hash and settings.tg_sources)
+    telegram_enabled = bool(settings.tg_api_id and settings.tg_api_hash and settings.tg_search_queries)
     client = None
 
     if telegram_enabled:
@@ -24,10 +24,14 @@ async def run(settings) -> None:
             sequential_updates=True,
         )
         await client.start()
-        print(f"Read-only Telegram monitoring: {len(settings.tg_sources)} configured public source(s)")
+        print(
+            "Read-only Telegram monitoring: "
+            f"global_queries={len(settings.tg_search_queries)} "
+            f"configured_sources={len(settings.tg_sources)}"
+        )
         print("No Telegram messages, reactions, joins, invites, or user outreach are performed.")
     else:
-        print("Telegram monitoring disabled: API credentials/sources are not configured.")
+        print("Telegram monitoring disabled: API credentials/search queries are not configured.")
 
     print("Gmail collector uses readonly OAuth and does not mark messages as read.")
     print(f"RSS public-feed collector: {len(settings.rss_feeds)} configured feed(s)")
@@ -42,6 +46,7 @@ async def run(settings) -> None:
                     print(
                         "Telegram cycle: "
                         f"sources={stats.sources} messages={stats.messages} "
+                        f"global_queries={stats.global_queries} global_results={stats.global_results} "
                         f"comments={stats.comments_checked} qualified={stats.qualified} "
                         f"hot={stats.hot} normal={stats.normal}"
                     )

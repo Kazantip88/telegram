@@ -53,7 +53,10 @@ _DIRECT_FACEBOOK_MARKERS = ("/posts/", "/permalink/", "/story.php", "/permalink.
 
 def _clean(value: str) -> str:
     value = html.unescape(value or "")
-    value = value.replace("\\u002F", "/").replace("\\/", "/").replace("\\u003A", ":")
+    for _ in range(2):
+        value = value.replace("\\\\/", "/").replace("\\/", "/")
+        value = value.replace("\\\\u002F", "/").replace("\\u002F", "/")
+        value = value.replace("\\\\u003A", ":").replace("\\u003A", ":")
     value = re.sub(r"<[^>]+>", " ", value)
     return " ".join(value.split())
 
@@ -179,7 +182,10 @@ def _append_result(result: list[dict[str, str]], seen: set[str], link: str, titl
 
 def _search_links(payload: bytes) -> list[dict[str, str]]:
     text = html.unescape(payload.decode("utf-8", errors="ignore"))
-    text = text.replace("\\/", "/").replace("\\u002F", "/")
+    for _ in range(2):
+        text = text.replace("\\\\/", "/").replace("\\/", "/")
+        text = text.replace("\\\\u002F", "/").replace("\\u002F", "/")
+        text = text.replace("\\\\u003A", ":").replace("\\u003A", ":")
     result: list[dict[str, str]] = []
     seen: set[str] = set()
 

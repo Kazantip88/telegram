@@ -246,7 +246,12 @@ async def collect_once(settings) -> FacebookStats:
                     signals = detect(text)
                     score = score_lead(signals)
                     if score.total < settings.min_email_score:
-                        print(f"Facebook candidate held for review: score={score.total} below threshold={settings.min_email_score} url={source_url}")
+                        print(
+                            f"Facebook candidate held for review: score={score.total} "
+                            f"below threshold={settings.min_email_score} url={source_url} "
+                            f"reasons={'; '.join(score.reasons) or 'none'}"
+                        )
+                        print(f"Facebook candidate text: {text[:1200]!r}")
                         continue
                     reasons = list(score.reasons) + [f"source_url={source_url}", f"facebook_target_country={_country(query)}", f"public_author={public_author or 'not exposed in search result'}"]
                     lead = {
@@ -278,7 +283,13 @@ async def collect_once(settings) -> FacebookStats:
 async def main() -> None:
     settings = load_settings(require_telegram=False)
     stats = await collect_once(settings)
-    print(f"Facebook public test: queries={stats.queries} search_results={stats.search_results} items={stats.items} facebook={stats.facebook} author={stats.author} direct_posts={stats.direct_posts} personal={stats.personal} qualified={stats.qualified} duplicates={stats.duplicates} hot={stats.hot} normal={stats.normal}")
+    print(
+        "Facebook public test: "
+        f"queries={stats.queries} search_results={stats.search_results} items={stats.items} "
+        f"facebook={stats.facebook} author={stats.author} direct_posts={stats.direct_posts} "
+        f"personal={stats.personal} qualified={stats.qualified} duplicates={stats.duplicates} "
+        f"hot={stats.hot} normal={stats.normal}"
+    )
 
 
 if __name__ == "__main__":

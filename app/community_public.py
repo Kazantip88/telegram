@@ -22,13 +22,23 @@ class CommunityStats:
 
 
 _REDDIT_QUERIES = (
-    '"I lost money" broker scam',
-    '"cannot withdraw" crypto broker',
-    '"I was scammed" investment',
-    '"ich habe Geld verloren" Broker',
-    '"Auszahlung" "verweigert" Broker',
-    '"я потерял деньги" брокер',
-    '"не могу вывести" деньги брокер',
+    '"I was scammed" broker "need help"',
+    '"I lost my savings" broker "what can I do"',
+    '"cannot withdraw" broker "any advice"',
+    '"withdrawal blocked" crypto lawyer',
+    '"broker stole my money" help',
+    '"investment scam" "need a lawyer"',
+    '"ich wurde betrogen" broker hilfe',
+    '"ich habe Geld verloren" broker "was kann ich tun"',
+    '"Auszahlung blockiert" broker Anwalt',
+    '"Anlagebetrug" "ich brauche Hilfe"',
+    '"я потерял деньги" брокер помогите',
+    '"не могу вывести" брокер "что делать"',
+    '"меня обманули" инвестиции юрист',
+    '"нужен адвокат" брокер',
+    '"ik ben opgelicht" broker hulp',
+    '"geld verloren" broker "wat kan ik doen"',
+    '"ik kan mijn geld niet opnemen" broker',
 )
 
 
@@ -37,7 +47,7 @@ def _default_feeds() -> tuple[str, ...]:
     for query in _REDDIT_QUERIES:
         feeds.append(
             "https://www.reddit.com/search.rss?"
-            + urllib.parse.urlencode({"q": query, "sort": "new", "t": "month"})
+            + urllib.parse.urlencode({"q": query, "sort": "new", "t": "month", "limit": "100"})
         )
     extra = tuple(
         item.strip()
@@ -98,7 +108,7 @@ def _is_direct_user_post(text: str, url: str) -> bool:
 
 async def collect_once(settings) -> CommunityStats:
     feeds = _default_feeds()
-    items_count = direct_loss = qualified = hot = normal = 0
+    items_count = help_requests = qualified = hot = normal = 0
     reddit_failed = False
     for index, feed_url in enumerate(feeds):
         is_reddit_search = "reddit.com/search.rss" in feed_url
@@ -131,8 +141,9 @@ async def collect_once(settings) -> CommunityStats:
                 if is_reddit_search and ("reddit.com/" not in link or "/comments/" not in link):
                     continue
                 bounded_item = dict(item)
-                bounded_item["summary"] = summary[:2500]
-                direct_loss += 1
+                bounded_item["summary"] = summary[:1800]
+                bounded_item["author"] = ""
+                help_requests += 1
                 priority = await _save_item(settings, feed_url, bounded_item)
                 if priority is None:
                     continue
@@ -143,13 +154,13 @@ async def collect_once(settings) -> CommunityStats:
                     normal += 1
         except Exception as exc:
             print(f"Community public feed failed for {feed_url!r}: {exc}")
-            if is_reddit_search and any(code in str(exc) for code in ("429", "403", "535")):
+            if is_reddit_search and any(code in str(exc) for code in ("429", "403", "503", "535")):
                 reddit_failed = True
                 print("Reddit search is rate-limited or blocked; skipping remaining Reddit queries this cycle.")
     return CommunityStats(
         feeds=len(feeds),
         items=items_count,
-        direct_loss=direct_loss,
+        help_requests=help_requests,
         qualified=qualified,
         hot=hot,
         normal=normal,

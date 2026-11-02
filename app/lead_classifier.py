@@ -64,7 +64,7 @@ PERSONAL_VICTIM_PATTERNS = (
     r"\bя\s+не\s+могу\s+вывести\b",
     r"\bмне\s+не\s+(?:дают|могут)\s+вывести\b",
     # German
-    r"\bich\s+(?:habe|hatte)\b.{0,140}\b(?:geld|ersparnisse|investment|einzahlung|konto)\b.{0,140}\b(?:verloren|investiert|bezahlt|überwiesen|weg)\b",
+    r"\bich\s+(?:habe|hatte)\b.{0,140}\b(?:geld|ersparnisse|euro|investment|einzahlung|konto)\b.{0,140}\b(?:verloren|investiert|bezahlt|überwiesen|weg)\b",
     r"\bich\s+wurde\s+(?:betrogen|abgezockt|getäuscht)\b",
     r"\bich\s+kann\s+(?:mein\s+)?geld\s+nicht\s+(?:auszahlen|abheben)\b",
     r"\bich\s+bekomme\s+mein\s+geld\s+nicht\s+zurück\b",

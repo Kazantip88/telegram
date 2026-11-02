@@ -104,7 +104,12 @@ def load_settings(require_telegram: bool = True) -> Settings:
         raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
 
     tg_search_queries_env = tuple(s.strip() for s in os.getenv("TG_SEARCH_QUERIES", "|").split("|") if s.strip())
-    tg_search_queries = tg_search_queries_env or _DEFAULT_TELEGRAM_SEARCH_QUERIES
+    # Ignore legacy Render query overrides by default. Operators can opt into
+    # their own query list explicitly with USE_CUSTOM_TG_SEARCH_QUERIES=true.
+    if _bool("USE_CUSTOM_TG_SEARCH_QUERIES", False) and tg_search_queries_env:
+        tg_search_queries = tg_search_queries_env
+    else:
+        tg_search_queries = _DEFAULT_TELEGRAM_SEARCH_QUERIES
 
     rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
     facebook_queries_env = tuple(s.strip() for s in os.getenv("FACEBOOK_QUERIES", "").split("|") if s.strip())

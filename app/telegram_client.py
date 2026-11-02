@@ -6,8 +6,6 @@ from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 
 from .community_public import collect_once as collect_community_once
-from .facebook_public import collect_once as collect_facebook_once
-from .gmail_alerts import collect_once as collect_gmail_once
 from .rss_leads import collect_once as collect_rss_once
 from .telegram_search import search_once
 
@@ -33,10 +31,10 @@ async def run(settings) -> None:
     else:
         print("Telegram monitoring disabled: API credentials/search queries are not configured.")
 
-    print("Gmail collector uses readonly OAuth and does not mark messages as read.")
+    print("Google Alerts lead intake: disabled by default; alert/news results are not treated as direct requests.")
     print(f"RSS public-feed collector: {len(settings.rss_feeds)} configured feed(s)")
     print("Community monitor: public Reddit search RSS + COMMUNITY_FEEDS")
-    print(f"Facebook public monitor: {'enabled' if settings.facebook_enabled else 'disabled'}")
+    print("Facebook search-engine discovery: disabled; no search-results page is treated as a direct user post.")
 
     try:
         while True:
@@ -56,15 +54,6 @@ async def run(settings) -> None:
                 except Exception as exc:
                     print(f"Telegram monitoring cycle failed: {exc}")
 
-            try:
-                gmail_stats = await collect_gmail_once(settings)
-                print(
-                    "Gmail Alerts cycle: "
-                    f"messages={gmail_stats.messages} qualified={gmail_stats.qualified} "
-                    f"hot={gmail_stats.hot} normal={gmail_stats.normal}"
-                )
-            except Exception as exc:
-                print(f"Gmail collector cycle failed: {exc}")
 
             try:
                 rss_stats = await collect_rss_once(settings)
@@ -89,17 +78,6 @@ async def run(settings) -> None:
             except Exception as exc:
                 print(f"Community public collector failed: {exc}")
 
-            try:
-                facebook_stats = await collect_facebook_once(settings)
-                print(
-                    "Facebook public cycle: "
-                    f"queries={facebook_stats.queries} search_results={facebook_stats.search_results} "
-                    f"facebook_urls={facebook_stats.facebook} direct_posts={facebook_stats.direct_posts} "
-                    f"personal={facebook_stats.personal} qualified={facebook_stats.qualified} "
-                    f"hot={facebook_stats.hot} normal={facebook_stats.normal}"
-                )
-            except Exception as exc:
-                print(f"Facebook collector cycle failed: {exc}")
 
             await asyncio.sleep(settings.poll_seconds)
     finally:

@@ -157,7 +157,11 @@ def _category(signals) -> str:
 
 
 async def collect_once(settings) -> GmailStats:
-    if _setting("GMAIL_ENABLED", "true").lower() not in {"1", "true", "yes", "on"}:
+    # Google Alerts are discovery notifications, not a first-party source of user requests.
+    # They stay off unless the operator explicitly opts in after reviewing the allowlist.
+    if _setting("ENABLE_GOOGLE_ALERTS_LEADS", "false").lower() not in {"1", "true", "yes", "on"}:
+        return GmailStats()
+    if _setting("GMAIL_ENABLED", "false").lower() not in {"1", "true", "yes", "on"}:
         return GmailStats()
 
     creds = _credentials()

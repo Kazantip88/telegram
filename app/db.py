@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS leads (
     source TEXT NOT NULL,
     sender_id TEXT,
     username TEXT,
+    source_url TEXT,
     language TEXT,
     amount REAL,
     score INTEGER NOT NULL,
@@ -37,6 +38,12 @@ def fingerprint(source: str, sender_id: str | None, message: str) -> str:
 async def init_db(path: Path) -> None:
     async with aiosqlite.connect(path) as db:
         await db.executescript(SCHEMA)
+        # Migrate existing Render/SQLite installations safely by adding one
+        # nullable column; existing lead rows are left untouched.
+        cursor = await db.execute("PRAGMA table_info(leads)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "source_url" not in columns:
+            await db.execute("ALTER TABLE leads ADD COLUMN source_url TEXT")
         await db.commit()
 
 
@@ -45,12 +52,12 @@ async def save_lead(path: Path, lead: dict) -> bool:
         async with aiosqlite.connect(path) as db:
             await db.execute(
                 """INSERT INTO leads
-                (fingerprint, telegram_message_id, source, sender_id, username, language,
+                (fingerprint, telegram_message_id, source, sender_id, username, source_url, language,
                  amount, score, priority, category, message, reasons, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     lead["fingerprint"], lead.get("telegram_message_id"), lead["source"],
-                    lead.get("sender_id"), lead.get("username"), lead.get("language"),
+                    lead.get("sender_id"), lead.get("username"), lead.get("source_url"), lead.get("language"),
                     lead.get("amount"), lead["score"], lead["priority"], lead.get("category"),
                     lead["message"], json.dumps(lead.get("reasons", []), ensure_ascii=False),
                     datetime.now(timezone.utc).isoformat(),

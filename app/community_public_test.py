@@ -27,7 +27,7 @@ class CommunityPublicFilterTests(unittest.TestCase):
         self.assertTrue(_likely_promo_or_seo(text, title))
 
     def test_accepts_first_person_post_from_reddit(self):
-        text = "I lost money to a broker and cannot withdraw my funds."
+        text = "I lost money to a broker and cannot withdraw my funds. Any advice?"
         self.assertTrue(_is_direct_user_post(
             text, "https://www.reddit.com/r/scams/comments/abc123/example/"
         ))

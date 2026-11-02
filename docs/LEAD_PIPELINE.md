@@ -1,85 +1,40 @@
-# Lead pipeline after Google Alerts false-positive review
+# Lead pipeline: direct public requests for help
 
-## Principle
+## Qualification rule
 
-The system is looking for personal public appeals from people who report their own fraud/investment loss. It is not a news monitor and it is not a legal-article monitor.
+A candidate is eligible only when all three gates pass:
 
-The pipeline is:
+1. Source gate: the destination is an approved user-generated discussion. News publishers, legal/SEO pages, company pages, broker reviews, marketing pages, unknown domains, search result pages, and article pages are not lead sources.
+2. Personal-experience gate: the author uses first-person language describing their own financial loss, suspected fraud, or blocked withdrawal.
+3. Help-intent gate: the author explicitly asks for help, advice, a lawyer, legal assistance, or what to do next.
 
-1. Parse the source/result.
-2. Classify the source type.
-3. For external Google Alert results, allow only approved user-generated discussion/Q&A sources.
-4. Require a direct first-person victim signal for a lead.
-5. Only then run the existing score.
-6. Email only candidates that pass both classification and score threshold.
+Only after all gates pass does the existing score run. The candidate must then meet MIN_EMAIL_SCORE.
 
-## Result classes
+## Active source paths
 
-- `lead` — direct first-person victim signal from an approved user-generated source; eligible for scoring.
-- `intelligence` — useful broker/scam/news/legal information, but never a client lead.
-- `ignore` — unsupported source or no reliable direct victim intent.
+- Reddit native public search RSS, sorted by newest, with RU/DE/EN/NL phrases. A Reddit result must link to a direct post permalink under /comments/.
+- Public Telegram supergroups: original human-authored messages only. Broadcast channels are not treated as people. For broadcast channels, only qualifying messages in linked public discussions may pass.
+- Optional RSS/Atom feeds: the feed transports discovery items, but each item's final link is independently checked against the user-generated host allowlist.
 
-## Google Alerts source policy
+The current host allowlist includes Reddit, Quora, Gutefrage, Pikabu, StackExchange, Finanzfrage, and Banki.ru forum pages. Unknown hosts are rejected until reviewed and added deliberately.
 
-Google Alerts is used only as a discovery mechanism. A result is lead-capable only when its destination is an explicitly approved user-generated discussion/Q&A source.
+## Disabled discovery methods
 
-Approved user-generated sources currently include:
+- Google Alerts/Gmail is not called by the scheduled pipeline.
+- Facebook search-engine HTML scraping (Google/Bing/DuckDuckGo result pages) is not called by the scheduled pipeline.
+- No search-engine result page is ever considered a direct user post.
 
-- Banki.ru forum (`/forum/` only)
-- Quora
-- Gutefrage
-- Reddit
-- Pikabu
+These choices intentionally reduce volume to improve precision. They do not guarantee that every person in need will be found; public-platform search, indexing, privacy settings, and rate limits restrict coverage.
 
-Explicitly rejected as client-lead sources:
+## Lead classes
 
-- news publishers;
-- legal/SEO pages;
-- generic articles, reviews and broker-warning pages;
-- arbitrary or unknown domains;
-- any page where the first-person wording is merely a quote inside an article.
+- lead — first-person loss report + explicit help request from an approved user-generated source; eligible for scoring.
+- intelligence — editorial/news/legal context; never a client lead.
+- ignore — no direct personal-loss signal, no explicit help request, or unsupported source.
 
-For example, `bankstoday.net/.../zalarium-com-obzor` containing `Я уже потерял деньги...` is still rejected because the destination is not an approved user-generated discussion source.
+## Privacy and handling
 
-## Direct victim signal
-
-The classifier looks for first-person statements such as:
-
-- RU: `я потерял`, `меня обманули`, `меня кинули`, `у меня украли`, `я не могу вывести`, `помогите вернуть мои деньги`.
-- DE: `ich habe ... verloren`, `ich wurde betrogen`, `ich kann mein Geld nicht auszahlen`, `ich bekomme mein Geld nicht zurück`.
-- EN: `I lost my money`, `I was scammed`, `I cannot withdraw`, `get my money back`.
-
-Third-person phrases such as `жертва потеряла деньги`, `Geld verloren haben`, `Opfer` or `Betroffene` are not direct victim signals. First-person quotes inside rejected article/news sources are not leads either.
-
-## Why this fixes the reviewed alerts
-
-The reviewed Google Alert emails showed that the main false-positive source was context:
-
-- legal SEO pages repeated all target keywords;
-- news articles described victims without being written by the victim;
-- broker warning pages used `Betrug`, `Geld zurück`, `Opfer` and similar terms as article content or CTA;
-- the same broker/entity appeared across several Alert queries;
-- a large number in an article was not necessarily the victim's loss;
-- `kostenfreie Ersteinschätzung` was a law-firm CTA, not a user's request for legal help.
-
-The classifier therefore rejects the source before scoring.
-
-## Deduplication
-
-Gmail lead fingerprints use the destination URL when available, so the same Alert result repeated across different Alert emails can collapse to one lead candidate.
-
-## Telegram
-
-Telegram public posts/comments also pass through the direct-victim gate. Telegram does not use the Google Alert source allowlist; its configured source is already a user-generated public channel/post stream.
-
-## Tests
-
-Regression cases for the reviewed false-positive patterns are in `app/lead_classifier_test.py`, including a Banki Today-style article with a first-person quote and unknown external sites.
-
-Run locally from the repository root:
-
-```bash
-python3 -m unittest app.lead_classifier_test
-```
-
-The test suite is intentionally separate from the live Gmail collector and does not send email or modify the lead database.
+- No DMs, unsolicited contact, reactions, joining groups, or profile enrichment.
+- Telegram sender IDs and usernames are not persisted in new lead records.
+- Public post permalink and a short excerpt (up to 1,800 characters) are retained for human verification.
+- Human review is mandatory before any legal or commercial decision.

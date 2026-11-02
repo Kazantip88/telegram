@@ -58,21 +58,7 @@ def _default_feeds() -> tuple[str, ...]:
 
 
 def _explicit_loss(text: str) -> bool:
-    lowered = text.lower().replace("ё", "е")
-    patterns = (
-        r"\bя\s+(?:потерял|потеряла|потеряли)\b.{0,180}\b(?:деньги|средства|руб|евро|доллар|крипто|инвести)",
-        r"\bя\s+(?:вложил|вложила|перевел|перевела|отправил|отправила)\b.{0,160}\b(?:деньги|средства|депозит|евро|доллар|крипто)",
-        r"\bменя\s+(?:обманули|развели|кинули|обокрали)\b",
-        r"\b(?:не могу|не получается)\s+(?:вывести|забрать)\b.{0,100}\b(?:деньги|средства|депозит|крипто)",
-        r"\bich\s+(?:habe|hatte)\b.{0,180}\b(?:geld|ersparnisse|euro|investment|einzahlung)\b.{0,180}\b(?:verloren|überwiesen|bezahlt|investiert)",
-        r"\bich\s+wurde\s+(?:betrogen|abgezockt|getäuscht)\b",
-        r"\bich\s+kann\s+mein\s+geld\s+nicht\s+(?:auszahlen|abheben|zurückbekommen)\b",
-        r"\bi\s+(?:lost|have\s+lost)\b.{0,160}\b(?:money|funds|savings|crypto|investment)",
-        r"\bi\s+(?:was\s+scammed|was\s+defrauded)\b",
-        r"\bi\s+(?:cannot|can't|am unable to)\s+withdraw\b",
-        r"\bmy\s+withdrawal\s+(?:is\s+)?blocked\b",
-    )
-    return any(re.search(pattern, lowered, flags=re.I | re.S) for pattern in patterns)
+    return _personal_victim_language(text)
 
 
 _PROMO_PATTERNS = (
@@ -101,8 +87,8 @@ def _likely_promo_or_seo(text: str, title: str) -> bool:
 
 
 def _is_direct_user_post(text: str, url: str) -> bool:
-    # Reuse the same source classifier as Google Alerts. Editorial/legal pages and
-    # unknown domains cannot become leads just because they contain victim-like text.
+    # Transport/search results never qualify by themselves: the destination must be
+    # an approved user-generated post with a first-person loss and help request.
     return classify(text, url, source="gmail:google-alerts").kind == "lead"
 
 
@@ -174,7 +160,7 @@ async def main() -> None:
     stats = await collect_once(settings)
     print(
         "Community public test: "
-        f"feeds={stats.feeds} items={stats.items} direct_loss={stats.direct_loss} "
+        f"feeds={stats.feeds} items={stats.items} help_requests={stats.help_requests} "
         f"qualified={stats.qualified} hot={stats.hot} normal={stats.normal}"
     )
 

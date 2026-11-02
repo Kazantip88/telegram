@@ -152,7 +152,7 @@ async def _save_item(settings, feed_url: str, item: dict[str, str]):
 
     # RSS is only a transport. The destination itself must be an approved
     # user-generated discussion and the author must ask for help explicitly.
-    classification = classify(text, source_url, source="gmail:google-alerts")
+    classification = classify(text, source_url, source="rss:public")
     if classification.kind != "lead":
         return None
 

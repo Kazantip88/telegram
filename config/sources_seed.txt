@@ -1,24 +1,10 @@
-# Initial 10-source public Telegram seed list for the first DRY_RUN test.
-# Keep only public sources that the account is authorized to monitor.
-# This is a curated seed, not a claim that it contains all Telegram sources.
-# The first cycle is intentionally limited; expand only after reviewing quality.
-
-# RU — potential lead / fraud-report sources
-https://t.me/vklader
-https://t.me/Proekt_73
-https://t.me/warn_scam
-https://t.me/InvestFuture
-https://t.me/knyazevinvest
-https://t.me/cyberpolice_rus
-https://t.me/tupagermania
-
-# DE — fraud / finance context
-https://t.me/info_scam_army_deutschland
-https://t.me/geldhelden
-https://t.me/handelsblattde
-
-# Discovery keywords used for later expansion:
-# RU: мошенничество, мошенники, брокер, инвестиции, потерял деньги,
-#     не могу вывести, заблокировали вывод, вернуть деньги, крипто, форекс
-# DE: Betrug, Betrüger, Broker, Anlagebetrug, Investmentbetrug,
-#     Geld verloren, Auszahlung blockiert, Geld zurück, Krypto, Forex
+# Do not seed news channels or finance publishers as lead sources.
+# Add only public Telegram supergroups where ordinary members post, or public
+# channels with an active linked discussion group. Only sources you are
+# authorized to monitor should be listed here.
+#
+# One public username or URL per line, for example:
+# @public_help_discussion_group
+# https://t.me/public_help_discussion_group
+#
+# The collector ignores top-level broadcast-channel posts as lead candidates.

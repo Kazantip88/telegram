@@ -10,27 +10,37 @@ RU = {
     "support": ["поддержка не отвечает", "брокер не отвечает", "не отвечает", "исчез", "пропал"],
     "evidence": ["скриншот", "скрины", "документы", "договор", "транзакци", "перевод", "выписка"],
     "investment": ["инвестировал", "инвестировала", "вложил", "вложила", "инвестиции", "брокер", "биржа", "форекс", "крипто", "bitcoin", "биткоин", "трейдинг"],
-    "help": ["помогите вернуть", "вернуть деньги", "возврат денег", "юрист", "адвокат", "что делать", "помощь"],
+    "help": ["помогите", "помощь", "вернуть деньги", "возврат денег", "юрист", "адвокат", "что делать", "посоветуйте"],
 }
 
 DE = {
     "loss": ["geld verloren", "verloren", "bestohlen", "abgezockt", "betrogen"],
-    "fraud": ["betrug", "betrüger", "scam", "anlagebetrug", "betrugsfall"],
+    "fraud": ["betrug", "betrüger", "scam", "abgezockt", "betrogen", "anlagebetrug"],
     "withdrawal": ["kann nicht auszahlen", "auszahlung nicht möglich", "auszahlung blockiert", "auszahlung gesperrt", "kann mein geld nicht auszahlen"],
     "support": ["support antwortet nicht", "broker antwortet nicht", "keine antwort", "broker verschwunden", "verschwunden"],
     "evidence": ["screenshots", "beweise", "dokumente", "vertrag", "transaktion", "überweisung", "kontoauszug"],
     "investment": ["investiert", "investment", "investition", "broker", "börse", "forex", "krypto", "kryptowährung", "bitcoin", "trading"],
-    "help": ["geld zurück", "geld zurückholen", "zurückbekommen", "anwalt", "rechtsanwalt", "rechtliche hilfe", "was kann ich tun", "hilfe"],
+    "help": ["geld zurück", "geld zurückholen", "zurückbekommen", "anwalt", "rechtsanwalt", "rechtliche hilfe", "was kann ich tun", "hilfe", "bitte um rat"],
 }
 
 EN = {
-    "loss": ["lost money", "lost my money", "lost my savings", "lost funds", "stolen", "they took my money", "scammed"],
-    "fraud": ["fraud", "fraudster", "scam", "scammed", "investment scam", "investment fraud"],
+    "loss": ["lost money", "lost my money", "lost my savings", "lost funds", "stolen", "they took my money", "scammed", "defrauded"],
+    "fraud": ["fraud", "fraudster", "scam", "scammed", "defrauded", "investment scam", "investment fraud"],
     "withdrawal": ["can't withdraw", "cannot withdraw", "unable to withdraw", "withdrawal blocked", "withdrawal is blocked", "can't cash out", "cannot cash out"],
     "support": ["support doesn't reply", "support does not reply", "support stopped responding", "broker doesn't reply", "broker does not reply", "broker disappeared", "no response"],
     "evidence": ["screenshots", "evidence", "documents", "contract", "transaction", "bank transfer", "bank statement"],
     "investment": ["invested", "investment", "broker", "exchange", "forex", "crypto", "cryptocurrency", "bitcoin", "trading"],
-    "help": ["get my money back", "get my money returned", "money back", "lawyer", "legal help", "what can i do", "i need help"],
+    "help": ["get my money back", "get my money returned", "money back", "lawyer", "legal help", "what can i do", "i need help", "any advice"],
+}
+
+NL = {
+    "loss": ["geld verloren", "spaargeld verloren", "ik ben opgelicht", "ik werd opgelicht", "bestolen", "mijn geld is weg"],
+    "fraud": ["opgelicht", "beleggingsfraude", "fraude", "scam", "cryptofraude"],
+    "withdrawal": ["kan mijn geld niet opnemen", "kan niet opnemen", "opname geblokkeerd", "uitbetaling geblokkeerd", "geld niet terugkrijgen"],
+    "support": ["klantenservice reageert niet", "broker reageert niet", "geen reactie", "broker verdwenen"],
+    "evidence": ["bewijs", "documenten", "overboeking", "transactie", "bankafschrift"],
+    "investment": ["beleggen", "belegging", "broker", "forex", "crypto", "cryptovaluta", "bitcoin", "trading"],
+    "help": ["ik heb hulp nodig", "advocaat", "juridische hulp", "wat kan ik doen", "advies gevraagd", "geld terug"],
 }
 
 @dataclass
@@ -58,7 +68,7 @@ class Signals:
 
 def detect(text: str) -> Signals:
     t = text.lower().replace("ё", "е")
-    dictionaries = (("ru", RU), ("de", DE), ("en", EN))
+    dictionaries = (("ru", RU), ("de", DE), ("en", EN), ("nl", NL))
     scores = {language: sum(any(p in t for p in values) for values in dictionary.values()) for language, dictionary in dictionaries}
     language = max(scores, key=scores.get)
     dictionary = dict(dictionaries)[language]
@@ -79,8 +89,8 @@ def extract_amounts(text: str) -> list[float]:
         (r"([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,[0-9]{1,2})?)\s*(?:€|eur|euro)", False),
         (r"€\s*([0-9]+(?:[.,][0-9]+)?)\s*k\b", True),
         (r"\b([0-9]+(?:[.,][0-9]+)?)\s*k\b", True),
-        (r"(?:\$|usd|dollars?)\s*([0-9]{1,3}(?:[,.\s][0-9]{3})*(?:[.,][0-9]{1,2})?)", False),
-        (r"([0-9]{1,3}(?:[,.\s][0-9]{3})*(?:[.,][0-9]{1,2})?)\s*(?:\$|usd|dollars?)", False),
+        (r"(?:\$|usd|dollars?)\s*([0-9]{1,3}(?:[,\.\s][0-9]{3})*(?:[.,][0-9]{1,2})?)", False),
+        (r"([0-9]{1,3}(?:[,\.\s][0-9]{3})*(?:[.,][0-9]{1,2})?)\s*(?:\$|usd|dollars?)", False),
     ]
     for pattern, is_k in patterns:
         for raw in re.findall(pattern, text, flags=re.I):

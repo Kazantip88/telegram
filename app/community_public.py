@@ -15,7 +15,7 @@ from .rss_leads import _fetch_sync, _items, _save_item, _personal_victim_languag
 class CommunityStats:
     feeds: int = 0
     items: int = 0
-    direct_loss: int = 0
+    help_requests: int = 0
     qualified: int = 0
     hot: int = 0
     normal: int = 0
@@ -89,7 +89,7 @@ def _likely_promo_or_seo(text: str, title: str) -> bool:
 def _is_direct_user_post(text: str, url: str) -> bool:
     # Transport/search results never qualify by themselves: the destination must be
     # an approved user-generated post with a first-person loss and help request.
-    return classify(text, url, source="gmail:google-alerts").kind == "lead"
+    return classify(text, url, source="rss:public").kind == "lead"
 
 
 async def collect_once(settings) -> CommunityStats:

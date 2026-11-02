@@ -71,7 +71,7 @@ async def run(settings) -> None:
                 print(
                     "Community public cycle: "
                     f"feeds={community_stats.feeds} items={community_stats.items} "
-                    f"direct_loss={community_stats.direct_loss} "
+                    f"help_requests={community_stats.help_requests} "
                     f"qualified={community_stats.qualified} hot={community_stats.hot} "
                     f"normal={community_stats.normal}"
                 )

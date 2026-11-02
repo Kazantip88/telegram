@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.lead_classifier import classify, has_direct_victim_language, has_help_request, source_kind
+from app.lead_classifier import classify, has_direct_victim_language, has_financial_context, has_help_request, source_kind
 
 
 class LeadClassifierTests(unittest.TestCase):
@@ -14,6 +14,7 @@ class LeadClassifierTests(unittest.TestCase):
         self.assertEqual(result.kind, "lead")
         self.assertTrue(result.direct_victim)
         self.assertTrue(result.help_request)
+        self.assertTrue(result.financial_context)
 
     def test_ru_kicked_out_and_lawyer_request_is_lead(self):
         result = classify(
@@ -26,6 +27,14 @@ class LeadClassifierTests(unittest.TestCase):
         result = classify("Я потерял 20000 евро у брокера и не могу вывести деньги", source="telegram")
         self.assertEqual(result.kind, "ignore")
         self.assertIn("no explicit request", result.reasons[0])
+
+    def test_non_financial_scam_request_is_not_a_lead(self):
+        result = classify(
+            "I was scammed on a game server. Can anyone help?",
+            source="telegram",
+        )
+        self.assertEqual(result.kind, "ignore")
+        self.assertFalse(result.financial_context)
 
     def test_generic_ru_article_is_not_lead(self):
         result = classify(

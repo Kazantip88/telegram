@@ -17,22 +17,23 @@ def _bool(name: str, default: bool) -> bool:
 
 
 _DEFAULT_TELEGRAM_SEARCH_QUERIES = (
-    '"ich habe Geld verloren" Broker',
-    '"ich wurde betrogen" Broker',
-    '"mein Geld" "nicht zurück" Trading',
-    '"Auszahlung" "verweigert" Broker',
-    '"Auszahlung" "blockiert" Krypto',
-    '"Geld verloren" Trading Betrug',
-    '"Geld verloren" Krypto Betrug',
-    '"ich brauche Hilfe" Broker Betrug',
-    '"ich brauche einen Anwalt" Trading',
-    '"welcher Anwalt" Broker Betrug',
-    '"I lost money" broker scam',
-    '"I was scammed" broker withdrawal',
-    '"my money" "cannot withdraw" crypto',
-    '"я потерял деньги" брокер мошенники',
-    '"не могу вывести" деньги брокер',
-    '"меня обманули" брокер крипто',
+    '"я потерял деньги" помогите',
+    '"не могу вывести" брокер что делать',
+    '"меня обманули" инвестиции юрист',
+    '"нужен адвокат" брокер',
+    '"ich wurde betrogen" broker hilfe',
+    '"ich habe Geld verloren" broker was tun',
+    '"Auszahlung blockiert" broker Anwalt',
+    '"Anlagebetrug" "ich brauche Hilfe"',
+    '"I was scammed" broker "need help"',
+    '"I lost my savings" broker "what can I do"',
+    '"cannot withdraw" broker "any advice"',
+    '"withdrawal blocked" crypto lawyer',
+    '"broker stole my money" help',
+    '"investment scam" "need a lawyer"',
+    '"ik ben opgelicht" broker hulp',
+    '"geld verloren" broker "wat kan ik doen"',
+    '"ik kan mijn geld niet opnemen" broker',
 )
 
 _DEFAULT_FACEBOOK_QUERIES = (
@@ -107,7 +108,9 @@ def load_settings(require_telegram: bool = True) -> Settings:
 
     rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
     facebook_queries_env = tuple(s.strip() for s in os.getenv("FACEBOOK_QUERIES", "").split("|") if s.strip())
-    facebook_queries = facebook_queries_env or _DEFAULT_FACEBOOK_QUERIES
+    # Facebook search-engine HTML scraping is not a trusted source of direct user requests.
+    # Only an official Meta API adapter may enable Facebook collection in a later change.
+    facebook_queries = facebook_queries_env
 
     db_path = Path(os.getenv("DB_PATH", "data/leads.sqlite3"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -141,7 +144,7 @@ def load_settings(require_telegram: bool = True) -> Settings:
         rss_max_items=max(1, int(os.getenv("RSS_MAX_ITEMS", "50"))),
         rss_timeout_seconds=max(5, int(os.getenv("RSS_TIMEOUT_SECONDS", "20"))),
         rss_request_delay_seconds=max(0.0, float(os.getenv("RSS_REQUEST_DELAY_SECONDS", "2"))),
-        facebook_enabled=_bool("FACEBOOK_ENABLED", True),
+        facebook_enabled=_bool("FACEBOOK_ENABLED", False),
         facebook_queries=facebook_queries,
         facebook_max_items=max(1, int(os.getenv("FACEBOOK_MAX_ITEMS", "50"))),
     )

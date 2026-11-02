@@ -24,6 +24,7 @@ class CandidateClass:
     kind: str
     source_kind: str
     direct_victim: bool
+    financial_context: bool
     help_request: bool
     reasons: tuple[str, ...]
 
@@ -83,6 +84,14 @@ PERSONAL_VICTIM_PATTERNS = (
     r"\bze\s+hebben\s+mijn\s+geld\s+gestolen\b",
 )
 
+FINANCIAL_CONTEXT_PATTERNS = (
+    r"\b(?:деньг|средств|руб|евро|доллар|депозит|брокер|бирж|инвест|крипто|биткоин|форекс|трейд|вывод|банк|карт|перевод)\w*\b",
+    r"\b(?:geld|ersparnis|euro|dollar|konto|broker|börse|investment|anlage|krypto|bitcoin|forex|trading|auszahlung|bank|überweisung)\w*\b",
+    r"\b(?:money|funds|savings|deposit|broker|exchange|investment|crypto|bitcoin|forex|trading|withdraw|bank|transfer|card|payment|dollars|euros)\b",
+    r"\b(?:geld|spaargeld|euro|rekening|broker|belegging|crypto|bitcoin|forex|trading|opname|uitbetaling|bank|overboeking|betaling)\b",
+)
+
+
 HELP_REQUEST_PATTERNS = (
     # Russian: a concrete request for advice or assistance
     r"\b(?:помогите|нужна\s+помощь|ищу\s+помощь|подскажите|что\s+(?:мне\s+)?делать|куда\s+обращаться|кто\s+может\s+помочь|посоветуйте)\b",
@@ -107,28 +116,37 @@ def has_help_request(text: str) -> bool:
     return any(re.search(pattern, normalized, flags=re.I | re.S) for pattern in HELP_REQUEST_PATTERNS)
 
 
+def has_financial_context(text: str) -> bool:
+    normalized = text.lower().replace("ё", "е")
+    return any(re.search(pattern, normalized, flags=re.I | re.S) for pattern in FINANCIAL_CONTEXT_PATTERNS)
+
+
 def classify(text: str, url: str | None = None, source: str = "public") -> CandidateClass:
     kind = source_kind(url, text) if source in {"gmail:google-alerts", "rss:public"} else source
     direct = has_direct_victim_language(text)
+    financial = has_financial_context(text)
     asks_for_help = has_help_request(text)
 
     if kind in {"legal", "news", "article"}:
-        return CandidateClass("intelligence", kind, direct, asks_for_help, (f"non-user source: {kind}",))
+        return CandidateClass("intelligence", kind, direct, financial, asks_for_help, (f"non-user source: {kind}",))
     if kind not in {"user_generated", "telegram"}:
-        return CandidateClass("ignore", kind, direct, asks_for_help, ("source is not an approved public user-generated discussion",))
+        return CandidateClass("ignore", kind, direct, financial, asks_for_help, ("source is not an approved public user-generated discussion",))
 
     host = _host(url)
     path = urlparse(url).path.lower() if url else ""
     if _is_domain(host, "reddit.com") and "/comments/" not in path:
-        return CandidateClass("ignore", kind, direct, asks_for_help, ("Reddit result is not a direct post permalink",))
+        return CandidateClass("ignore", kind, direct, financial, asks_for_help, ("Reddit result is not a direct post permalink",))
     if not direct:
-        return CandidateClass("ignore", kind, False, asks_for_help, ("no first-person report of the author's own loss",))
+        return CandidateClass("ignore", kind, False, financial, asks_for_help, ("no first-person report of the author's own loss",))
+    if not financial:
+        return CandidateClass("ignore", kind, True, False, asks_for_help, ("no explicit financial-loss context",))
     if not asks_for_help:
-        return CandidateClass("ignore", kind, True, False, ("no explicit request for help, advice, or legal assistance",))
+        return CandidateClass("ignore", kind, True, True, False, ("no explicit request for help, advice, or legal assistance",))
     return CandidateClass(
         "lead",
         kind,
         True,
         True,
-        ("first-person loss report", "explicit request for help/advice"),
+        True,
+        ("first-person financial-loss report", "explicit request for help/advice"),
     )

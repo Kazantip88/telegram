@@ -54,10 +54,22 @@ async def inspect_discussion(message, *, limit: int = 10, active_days: int = 30)
         ):
             if newest is None:
                 newest = getattr(reply, "date", None)
+            if getattr(reply, "fwd_from", None) or getattr(reply, "via_bot_id", None):
+                continue
+            sender = getattr(reply, "sender", None)
+            if sender is None:
+                try:
+                    sender = await reply.get_sender()
+                except Exception:
+                    continue
+            if sender is None or bool(getattr(sender, "bot", False)):
+                continue
             text = (reply.raw_text or "").strip()
             if text:
                 comments.append(text)
-                authors.append(await _public_username(reply))
+                # Keep author slots for the existing result shape, but do not
+                # persist public usernames/IDs in lead records.
+                authors.append(None)
 
         if not comments:
             return DiscussionResult(False, False, total, 0, (), (), "discussion_unreadable")

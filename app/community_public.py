@@ -15,20 +15,30 @@ from .rss_leads import _fetch_sync, _items, _save_item, _personal_victim_languag
 class CommunityStats:
     feeds: int = 0
     items: int = 0
-    direct_loss: int = 0
+    help_requests: int = 0
     qualified: int = 0
     hot: int = 0
     normal: int = 0
 
 
 _REDDIT_QUERIES = (
-    '"I lost money" broker scam',
-    '"cannot withdraw" crypto broker',
-    '"I was scammed" investment',
-    '"ich habe Geld verloren" Broker',
-    '"Auszahlung" "verweigert" Broker',
-    '"я потерял деньги" брокер',
-    '"не могу вывести" деньги брокер',
+    '"I was scammed" broker "need help"',
+    '"I lost my savings" broker "what can I do"',
+    '"cannot withdraw" broker "any advice"',
+    '"withdrawal blocked" crypto lawyer',
+    '"broker stole my money" help',
+    '"investment scam" "need a lawyer"',
+    '"ich wurde betrogen" broker hilfe',
+    '"ich habe Geld verloren" broker "was kann ich tun"',
+    '"Auszahlung blockiert" broker Anwalt',
+    '"Anlagebetrug" "ich brauche Hilfe"',
+    '"я потерял деньги" брокер помогите',
+    '"не могу вывести" брокер "что делать"',
+    '"меня обманули" инвестиции юрист',
+    '"нужен адвокат" брокер',
+    '"ik ben opgelicht" broker hulp',
+    '"geld verloren" broker "wat kan ik doen"',
+    '"ik kan mijn geld niet opnemen" broker',
 )
 
 
@@ -37,7 +47,7 @@ def _default_feeds() -> tuple[str, ...]:
     for query in _REDDIT_QUERIES:
         feeds.append(
             "https://www.reddit.com/search.rss?"
-            + urllib.parse.urlencode({"q": query, "sort": "new", "t": "month"})
+            + urllib.parse.urlencode({"q": query, "sort": "new", "t": "month", "limit": "100"})
         )
     extra = tuple(
         item.strip()
@@ -48,21 +58,7 @@ def _default_feeds() -> tuple[str, ...]:
 
 
 def _explicit_loss(text: str) -> bool:
-    lowered = text.lower().replace("ё", "е")
-    patterns = (
-        r"\bя\s+(?:потерял|потеряла|потеряли)\b.{0,180}\b(?:деньги|средства|руб|евро|доллар|крипто|инвести)",
-        r"\bя\s+(?:вложил|вложила|перевел|перевела|отправил|отправила)\b.{0,160}\b(?:деньги|средства|депозит|евро|доллар|крипто)",
-        r"\bменя\s+(?:обманули|развели|кинули|обокрали)\b",
-        r"\b(?:не могу|не получается)\s+(?:вывести|забрать)\b.{0,100}\b(?:деньги|средства|депозит|крипто)",
-        r"\bich\s+(?:habe|hatte)\b.{0,180}\b(?:geld|ersparnisse|euro|investment|einzahlung)\b.{0,180}\b(?:verloren|überwiesen|bezahlt|investiert)",
-        r"\bich\s+wurde\s+(?:betrogen|abgezockt|getäuscht)\b",
-        r"\bich\s+kann\s+mein\s+geld\s+nicht\s+(?:auszahlen|abheben|zurückbekommen)\b",
-        r"\bi\s+(?:lost|have\s+lost)\b.{0,160}\b(?:money|funds|savings|crypto|investment)",
-        r"\bi\s+(?:was\s+scammed|was\s+defrauded)\b",
-        r"\bi\s+(?:cannot|can't|am unable to)\s+withdraw\b",
-        r"\bmy\s+withdrawal\s+(?:is\s+)?blocked\b",
-    )
-    return any(re.search(pattern, lowered, flags=re.I | re.S) for pattern in patterns)
+    return _personal_victim_language(text)
 
 
 _PROMO_PATTERNS = (
@@ -91,14 +87,14 @@ def _likely_promo_or_seo(text: str, title: str) -> bool:
 
 
 def _is_direct_user_post(text: str, url: str) -> bool:
-    # Reuse the same source classifier as Google Alerts. Editorial/legal pages and
-    # unknown domains cannot become leads just because they contain victim-like text.
-    return classify(text, url, source="gmail:google-alerts").kind == "lead"
+    # Transport/search results never qualify by themselves: the destination must be
+    # an approved user-generated post with a first-person loss and help request.
+    return classify(text, url, source="rss:public").kind == "lead"
 
 
 async def collect_once(settings) -> CommunityStats:
     feeds = _default_feeds()
-    items_count = direct_loss = qualified = hot = normal = 0
+    items_count = help_requests = qualified = hot = normal = 0
     reddit_failed = False
     for index, feed_url in enumerate(feeds):
         is_reddit_search = "reddit.com/search.rss" in feed_url
@@ -131,8 +127,9 @@ async def collect_once(settings) -> CommunityStats:
                 if is_reddit_search and ("reddit.com/" not in link or "/comments/" not in link):
                     continue
                 bounded_item = dict(item)
-                bounded_item["summary"] = summary[:2500]
-                direct_loss += 1
+                bounded_item["summary"] = summary[:1800]
+                bounded_item["author"] = ""
+                help_requests += 1
                 priority = await _save_item(settings, feed_url, bounded_item)
                 if priority is None:
                     continue
@@ -143,13 +140,13 @@ async def collect_once(settings) -> CommunityStats:
                     normal += 1
         except Exception as exc:
             print(f"Community public feed failed for {feed_url!r}: {exc}")
-            if is_reddit_search and any(code in str(exc) for code in ("429", "403", "535")):
+            if is_reddit_search and any(code in str(exc) for code in ("429", "403", "503", "535")):
                 reddit_failed = True
                 print("Reddit search is rate-limited or blocked; skipping remaining Reddit queries this cycle.")
     return CommunityStats(
         feeds=len(feeds),
         items=items_count,
-        direct_loss=direct_loss,
+        help_requests=help_requests,
         qualified=qualified,
         hot=hot,
         normal=normal,
@@ -163,7 +160,7 @@ async def main() -> None:
     stats = await collect_once(settings)
     print(
         "Community public test: "
-        f"feeds={stats.feeds} items={stats.items} direct_loss={stats.direct_loss} "
+        f"feeds={stats.feeds} items={stats.items} help_requests={stats.help_requests} "
         f"qualified={stats.qualified} hot={stats.hot} normal={stats.normal}"
     )
 

@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from .db import fingerprint, save_lead
 from .detector import detect
 from .emailer import build_message, send_message
+from .lead_classifier import classify, has_direct_victim_language
 from .scoring import score_lead
 
 
@@ -111,8 +112,7 @@ def _items(xml: bytes) -> list[dict[str, str]]:
 
 
 def _personal_victim_language(text: str) -> bool:
-    lowered = text.lower()
-    return any(re.search(pattern, lowered) for pattern in (*_RU_PERSONAL, *_DE_PERSONAL, *_EN_PERSONAL))
+    return has_direct_victim_language(text)
 
 
 def _category(signals) -> str:
@@ -146,28 +146,33 @@ def _fetch_sync(url: str, timeout: int) -> bytes:
 
 async def _save_item(settings, feed_url: str, item: dict[str, str]):
     text = " — ".join(part for part in (item.get("title"), item.get("summary")) if part).strip()
-    if not text or not _personal_victim_language(text):
+    source_url = (item.get("link") or "").strip()
+    if not text or not source_url or not _personal_victim_language(text):
         return None
 
+    # RSS is only a transport. The destination itself must be an approved
+    # user-generated discussion and the author must ask for help explicitly.
+    classification = classify(text, source_url, source="rss:public")
+    if classification.kind != "lead":
+        return None
+
+    text = text[:1800]
     signals = detect(text)
     result = score_lead(signals)
     if result.total < settings.min_email_score:
         return None
 
     source = _feed_label(feed_url)
-    source_url = item.get("link") or feed_url
-    reasons = list(result.reasons)
+    reasons = list(result.reasons) + list(classification.reasons)
     reasons.append(f"source_url={source_url}")
-    if item.get("author"):
-        reasons.append(f"public_author={item['author']}")
 
     lead = {
-        "fingerprint": fingerprint(source, item.get("author") or None, text),
+        "fingerprint": fingerprint(source, source_url, text),
         "telegram_message_id": None,
         "source": source,
         "sender_id": None,
-        "username": item.get("author") or None,
-        "public_name": item.get("author") or None,
+        "username": None,
+        "public_name": None,
         "source_url": source_url,
         "language": signals.language,
         "amount": max(signals.amounts) if signals.amounts else None,

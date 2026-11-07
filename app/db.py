@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS leads (
     source TEXT NOT NULL,
     sender_id TEXT,
     username TEXT,
+    source_url TEXT,
     language TEXT,
     amount REAL,
     score INTEGER NOT NULL,
@@ -24,6 +25,11 @@ CREATE TABLE IF NOT EXISTS leads (
     reasons TEXT NOT NULL,
     created_at TEXT NOT NULL,
     emailed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS collector_state (
+    collector TEXT PRIMARY KEY,
+    cursor TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -37,6 +43,32 @@ def fingerprint(source: str, sender_id: str | None, message: str) -> str:
 async def init_db(path: Path) -> None:
     async with aiosqlite.connect(path) as db:
         await db.executescript(SCHEMA)
+        cursor = await db.execute("PRAGMA table_info(leads)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "source_url" not in columns:
+            await db.execute("ALTER TABLE leads ADD COLUMN source_url TEXT")
+        await db.commit()
+
+
+async def get_collector_cursor(path: Path, collector: str) -> str | None:
+    async with aiosqlite.connect(path) as db:
+        cursor = await db.execute(
+            "SELECT cursor FROM collector_state WHERE collector=?",
+            (collector,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def set_collector_cursor(path: Path, collector: str, value: str) -> None:
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """INSERT INTO collector_state (collector, cursor, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(collector) DO UPDATE SET
+                 cursor=excluded.cursor, updated_at=excluded.updated_at""",
+            (collector, value, datetime.now(timezone.utc).isoformat()),
+        )
         await db.commit()
 
 
@@ -45,12 +77,12 @@ async def save_lead(path: Path, lead: dict) -> bool:
         async with aiosqlite.connect(path) as db:
             await db.execute(
                 """INSERT INTO leads
-                (fingerprint, telegram_message_id, source, sender_id, username, language,
+                (fingerprint, telegram_message_id, source, sender_id, username, source_url, language,
                  amount, score, priority, category, message, reasons, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     lead["fingerprint"], lead.get("telegram_message_id"), lead["source"],
-                    lead.get("sender_id"), lead.get("username"), lead.get("language"),
+                    lead.get("sender_id"), lead.get("username"), lead.get("source_url"), lead.get("language"),
                     lead.get("amount"), lead["score"], lead["priority"], lead.get("category"),
                     lead["message"], json.dumps(lead.get("reasons", []), ensure_ascii=False),
                     datetime.now(timezone.utc).isoformat(),

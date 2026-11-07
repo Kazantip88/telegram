@@ -6,14 +6,14 @@ from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 
 from .community_public import collect_once as collect_community_once
-from .facebook_public import collect_once as collect_facebook_once
-from .gmail_alerts import collect_once as collect_gmail_once
 from .rss_leads import collect_once as collect_rss_once
 from .telegram_search import search_once
+from .x_leads import collect_once as collect_x_once
 
 
 async def run(settings) -> None:
     telegram_enabled = bool(settings.tg_api_id and settings.tg_api_hash and settings.tg_search_queries)
+    x_enabled = bool(settings.x_enabled and settings.x_api_bearer_token)
     client = None
 
     if telegram_enabled:
@@ -33,10 +33,22 @@ async def run(settings) -> None:
     else:
         print("Telegram monitoring disabled: API credentials/search queries are not configured.")
 
-    print("Gmail collector uses readonly OAuth and does not mark messages as read.")
+    print("Google Alerts/Gmail collector: removed from this application.")
     print(f"RSS public-feed collector: {len(settings.rss_feeds)} configured feed(s)")
     print("Community monitor: public Reddit search RSS + COMMUNITY_FEEDS")
-    print(f"Facebook public monitor: {'enabled' if settings.facebook_enabled else 'disabled'}")
+    print("Facebook search-engine discovery: disabled; only a future authorized official API could enable it.")
+    if x_enabled:
+        print(
+            "X API monitor enabled: "
+            f"queries={len(settings.x_search_queries)} "
+            f"max_results_per_query={settings.x_max_results} "
+            f"interval={settings.x_poll_seconds}s"
+        )
+    else:
+        print("X API monitor disabled: set X_API_BEARER_TOKEN and X_ENABLED=true to activate it.")
+
+    loop = asyncio.get_running_loop()
+    next_x_run = 0.0
 
     try:
         while True:
@@ -57,16 +69,6 @@ async def run(settings) -> None:
                     print(f"Telegram monitoring cycle failed: {exc}")
 
             try:
-                gmail_stats = await collect_gmail_once(settings)
-                print(
-                    "Gmail Alerts cycle: "
-                    f"messages={gmail_stats.messages} qualified={gmail_stats.qualified} "
-                    f"hot={gmail_stats.hot} normal={gmail_stats.normal}"
-                )
-            except Exception as exc:
-                print(f"Gmail collector cycle failed: {exc}")
-
-            try:
                 rss_stats = await collect_rss_once(settings)
                 print(
                     "RSS cycle: "
@@ -82,24 +84,25 @@ async def run(settings) -> None:
                 print(
                     "Community public cycle: "
                     f"feeds={community_stats.feeds} items={community_stats.items} "
-                    f"direct_loss={community_stats.direct_loss} "
+                    f"help_requests={community_stats.help_requests} "
                     f"qualified={community_stats.qualified} hot={community_stats.hot} "
                     f"normal={community_stats.normal}"
                 )
             except Exception as exc:
                 print(f"Community public collector failed: {exc}")
 
-            try:
-                facebook_stats = await collect_facebook_once(settings)
-                print(
-                    "Facebook public cycle: "
-                    f"queries={facebook_stats.queries} search_results={facebook_stats.search_results} "
-                    f"facebook_urls={facebook_stats.facebook} direct_posts={facebook_stats.direct_posts} "
-                    f"personal={facebook_stats.personal} qualified={facebook_stats.qualified} "
-                    f"hot={facebook_stats.hot} normal={facebook_stats.normal}"
-                )
-            except Exception as exc:
-                print(f"Facebook collector cycle failed: {exc}")
+            if x_enabled and loop.time() >= next_x_run:
+                try:
+                    x_stats = await collect_x_once(settings)
+                    print(
+                        "X API cycle: "
+                        f"queries={x_stats.queries} posts={x_stats.posts} "
+                        f"personal={x_stats.personal_posts} qualified={x_stats.qualified} "
+                        f"hot={x_stats.hot} normal={x_stats.normal}"
+                    )
+                except Exception as exc:
+                    print(f"X API collector cycle failed: {exc}")
+                next_x_run = loop.time() + settings.x_poll_seconds
 
             await asyncio.sleep(settings.poll_seconds)
     finally:

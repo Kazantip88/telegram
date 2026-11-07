@@ -24,16 +24,14 @@ Language: {lead.get('language', 'unknown')}
 Category: {lead.get('category', 'Unknown')}
 Potential loss: {amount}
 Source: {lead['source']}
-Public name: {lead.get('public_name') or lead.get('username') or 'not available'}
-Public ID: {lead.get('public_id') or lead.get('sender_id') or 'not available'}
-Public profile/post URL: {lead.get('source_url') or 'not available'}
+Public post URL: {lead.get('source_url') or 'not available'}
 Telegram message ID: {lead.get('telegram_message_id') or 'n/a'}
 
 Scoring reasons:
 {reasons}
 
 Original public message:
-{lead['message']}
+{lead['message'][:1800]}
 
 Human review is required before any legal or commercial decision.
 """

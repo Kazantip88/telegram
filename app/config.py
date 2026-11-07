@@ -36,25 +36,11 @@ _DEFAULT_TELEGRAM_SEARCH_QUERIES = (
     '"ik kan mijn geld niet opnemen" broker',
 )
 
-_DEFAULT_FACEBOOK_QUERIES = (
-    "[DE] \"ich habe Geld verloren\" Broker",
-    "[DE] \"ich wurde betrogen\" Broker",
-    "[DE] \"mein Geld\" \"nicht zurück\" Trading",
-    "[DE] \"Auszahlung\" \"verweigert\" Broker",
-    "[DE] \"Auszahlung\" \"blockiert\" Krypto",
-    "[DE] \"Geld verloren\" Trading Betrug",
-    "[DE] \"Geld verloren\" Krypto Betrug",
-    "[DE] \"ich brauche Hilfe\" Broker Betrug",
-    "[DE] \"ich brauche einen Anwalt\" Trading",
-    "[DE] \"welcher Anwalt\" Broker Betrug",
-    "[AT] \"ich wurde betrogen\" Broker",
-    "[CH] \"ich wurde betrogen\" Broker",
-    "[NL] \"I lost money\" broker scam",
-    "[EN] \"I was scammed\" broker withdrawal",
-    "[EN] \"my money\" \"cannot withdraw\" crypto",
-    "[RU] \"я потерял деньги\" брокер мошенники",
-    "[RU] \"не могу вывести\" деньги брокер",
-    "[RU] \"меня обманули\" брокер крипто",
+_DEFAULT_X_SEARCH_QUERIES = (
+    '("я потерял деньги" OR "меня обманули" OR "не могу вывести" OR "нужен юрист" OR "помогите вернуть деньги") lang:ru -is:retweet',
+    '("ich wurde betrogen" OR "Geld verloren" OR "Auszahlung blockiert" OR "ich brauche Hilfe" OR "Anwalt gesucht") lang:de -is:retweet',
+    '("I lost money" OR "I was scammed" OR "cannot withdraw" OR "need a lawyer" OR "please help") lang:en -is:retweet',
+    '("ik ben opgelicht" OR "geld verloren" OR "geld niet terug" OR "ik heb hulp nodig") lang:nl -is:retweet',
 )
 
 
@@ -91,6 +77,12 @@ class Settings:
     facebook_enabled: bool
     facebook_queries: tuple[str, ...]
     facebook_max_items: int
+    x_enabled: bool
+    x_api_bearer_token: str
+    x_search_queries: tuple[str, ...]
+    x_max_results: int
+    x_poll_seconds: int
+    x_timeout_seconds: int
 
 
 def load_settings(require_telegram: bool = True) -> Settings:
@@ -104,18 +96,16 @@ def load_settings(require_telegram: bool = True) -> Settings:
         raise RuntimeError("TG_SOURCES must contain at least one authorized public source")
 
     tg_search_queries_env = tuple(s.strip() for s in os.getenv("TG_SEARCH_QUERIES", "|").split("|") if s.strip())
-    # Ignore legacy Render query overrides by default. Operators can opt into
-    # their own query list explicitly with USE_CUSTOM_TG_SEARCH_QUERIES=true.
     if _bool("USE_CUSTOM_TG_SEARCH_QUERIES", False) and tg_search_queries_env:
         tg_search_queries = tg_search_queries_env
     else:
         tg_search_queries = _DEFAULT_TELEGRAM_SEARCH_QUERIES
 
+    x_search_queries_env = tuple(s.strip() for s in os.getenv("X_SEARCH_QUERIES", "|").split("|") if s.strip())
+    x_search_queries = x_search_queries_env or _DEFAULT_X_SEARCH_QUERIES
+
     rss_feeds = tuple(s.strip() for s in os.getenv("RSS_FEEDS", "").split(",") if s.strip())
     facebook_queries_env = tuple(s.strip() for s in os.getenv("FACEBOOK_QUERIES", "").split("|") if s.strip())
-    # Facebook search-engine HTML scraping is not a trusted source of direct user requests.
-    # Only an official Meta API adapter may enable Facebook collection in a later change.
-    facebook_queries = facebook_queries_env
 
     db_path = Path(os.getenv("DB_PATH", "data/leads.sqlite3"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,6 +140,12 @@ def load_settings(require_telegram: bool = True) -> Settings:
         rss_timeout_seconds=max(5, int(os.getenv("RSS_TIMEOUT_SECONDS", "20"))),
         rss_request_delay_seconds=max(0.0, float(os.getenv("RSS_REQUEST_DELAY_SECONDS", "2"))),
         facebook_enabled=_bool("FACEBOOK_ENABLED", False),
-        facebook_queries=facebook_queries,
+        facebook_queries=facebook_queries_env,
         facebook_max_items=max(1, int(os.getenv("FACEBOOK_MAX_ITEMS", "50"))),
+        x_enabled=_bool("X_ENABLED", True),
+        x_api_bearer_token=os.getenv("X_API_BEARER_TOKEN", "").strip(),
+        x_search_queries=x_search_queries,
+        x_max_results=max(10, min(100, int(os.getenv("X_MAX_RESULTS", "10")))),
+        x_poll_seconds=max(60, int(os.getenv("X_POLL_SECONDS", "21600"))),
+        x_timeout_seconds=max(5, int(os.getenv("X_TIMEOUT_SECONDS", "20"))),
     )

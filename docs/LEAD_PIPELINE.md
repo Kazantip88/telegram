@@ -12,19 +12,28 @@ Only after all gates pass does the existing score run. The candidate must then m
 
 ## Active source paths
 
+- X official API recent search: four RU/DE/EN/NL search profiles. Retweets are excluded; direct public post URLs are retained. A per-query since_id cursor is stored in SQLite to avoid rereading old posts.
 - Reddit native public search RSS, sorted by newest, with RU/DE/EN/NL phrases. A Reddit result must link to a direct post permalink under /comments/.
 - Public Telegram supergroups: original human-authored messages only. Broadcast channels are not treated as people. For broadcast channels, only qualifying messages in linked public discussions may pass.
 - Optional RSS/Atom feeds: the feed transports discovery items, but each item's final link is independently checked against the user-generated host allowlist.
 
-The current host allowlist includes Reddit, Quora, Gutefrage, Pikabu, StackExchange, Finanzfrage, and Banki.ru forum pages. Unknown hosts are rejected until reviewed and added deliberately.
+The current host allowlist includes X, Reddit, Quora, Gutefrage, Pikabu, StackExchange, Finanzfrage, and Banki.ru forum pages. Unknown hosts are rejected until reviewed and added deliberately.
 
 ## Disabled discovery methods
 
-- Google Alerts/Gmail is not called by the scheduled pipeline.
+- Google Alerts/Gmail collection code and Google OAuth dependencies have been removed. The application no longer reads Gmail or Google Alerts messages. This does not cancel subscriptions in a user's Google Alerts account.
 - Facebook search-engine HTML scraping (Google/Bing/DuckDuckGo result pages) is not called by the scheduled pipeline.
 - No search-engine result page is ever considered a direct user post.
 
-These choices intentionally reduce volume to improve precision. They do not guarantee that every person in need will be found; public-platform search, indexing, privacy settings, and rate limits restrict coverage.
+These choices intentionally reduce volume to improve precision. They do not guarantee that every person in need will be found; public-platform search, indexing, privacy settings, API access, pricing, and rate limits restrict coverage.
+
+## X API operations and cost
+
+- Uses the official `GET /2/tweets/search/recent` endpoint and OAuth 2.0 Bearer Token.
+- The recent-search endpoint covers the last seven days; this collector uses `since_id` to request newer posts after the first pass.
+- Default maximum is 10 posts per query and four language queries every six hours.
+- At X's currently listed $0.005 per Posts Read, the configured maximum is approximately $0.80/day when all four queries return 10 posts on each of four daily runs. Actual usage depends on returned posts and current X billing.
+- Keep the token in Render environment variables. Never put it in Git or chat.
 
 ## Lead classes
 
@@ -35,6 +44,6 @@ These choices intentionally reduce volume to improve precision. They do not guar
 ## Privacy and handling
 
 - No DMs, unsolicited contact, reactions, joining groups, or profile enrichment.
-- Telegram sender IDs and usernames are not persisted in new lead records.
+- Telegram and X author IDs/usernames are not persisted in new lead records.
 - Public post permalink and a short excerpt (up to 1,800 characters) are retained for human verification.
 - Human review is mandatory before any legal or commercial decision.

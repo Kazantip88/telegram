@@ -8,10 +8,12 @@ from telethon.errors import FloodWaitError
 from .community_public import collect_once as collect_community_once
 from .rss_leads import collect_once as collect_rss_once
 from .telegram_search import search_once
+from .x_leads import collect_once as collect_x_once
 
 
 async def run(settings) -> None:
     telegram_enabled = bool(settings.tg_api_id and settings.tg_api_hash and settings.tg_search_queries)
+    x_enabled = bool(settings.x_enabled and settings.x_api_bearer_token)
     client = None
 
     if telegram_enabled:
@@ -31,10 +33,22 @@ async def run(settings) -> None:
     else:
         print("Telegram monitoring disabled: API credentials/search queries are not configured.")
 
-    print("Google Alerts lead intake: disabled by default; alert/news results are not treated as direct requests.")
+    print("Google Alerts/Gmail collector: removed from this application.")
     print(f"RSS public-feed collector: {len(settings.rss_feeds)} configured feed(s)")
     print("Community monitor: public Reddit search RSS + COMMUNITY_FEEDS")
-    print("Facebook search-engine discovery: disabled; no search-results page is treated as a direct user post.")
+    print("Facebook search-engine discovery: disabled; only a future authorized official API could enable it.")
+    if x_enabled:
+        print(
+            "X API monitor enabled: "
+            f"queries={len(settings.x_search_queries)} "
+            f"max_results_per_query={settings.x_max_results} "
+            f"interval={settings.x_poll_seconds}s"
+        )
+    else:
+        print("X API monitor disabled: set X_API_BEARER_TOKEN and X_ENABLED=true to activate it.")
+
+    loop = asyncio.get_running_loop()
+    next_x_run = 0.0
 
     try:
         while True:
@@ -53,7 +67,6 @@ async def run(settings) -> None:
                     telegram_enabled = False
                 except Exception as exc:
                     print(f"Telegram monitoring cycle failed: {exc}")
-
 
             try:
                 rss_stats = await collect_rss_once(settings)
@@ -78,6 +91,18 @@ async def run(settings) -> None:
             except Exception as exc:
                 print(f"Community public collector failed: {exc}")
 
+            if x_enabled and loop.time() >= next_x_run:
+                try:
+                    x_stats = await collect_x_once(settings)
+                    print(
+                        "X API cycle: "
+                        f"queries={x_stats.queries} posts={x_stats.posts} "
+                        f"personal={x_stats.personal_posts} qualified={x_stats.qualified} "
+                        f"hot={x_stats.hot} normal={x_stats.normal}"
+                    )
+                except Exception as exc:
+                    print(f"X API collector cycle failed: {exc}")
+                next_x_run = loop.time() + settings.x_poll_seconds
 
             await asyncio.sleep(settings.poll_seconds)
     finally:
